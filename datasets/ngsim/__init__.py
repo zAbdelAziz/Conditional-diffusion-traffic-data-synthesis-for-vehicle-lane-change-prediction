@@ -2,6 +2,7 @@ from numpy import rint
 from pandas import DataFrame
 
 from datasets.base import BaseDataset
+from datasets.ngsim.diffusion_feature_builder import DiffusionFeatureBuilder
 from utils.misc import is_all
 from utils.pd_utils import de_to_numeric
 
@@ -18,7 +19,15 @@ class NgsimDataset(BaseDataset):
 		# self.D = self.X.shape[2]
 
 	def _build_refactored(self):
-		self._read_raw()
+		# Read the Raw Dataset
+		df = self._read_raw()
+
+		# Split Refactoring in another class [cuz its big]
+		# Converts the csv to a time series
+		feature_builder = DiffusionFeatureBuilder(df = df)
+		feature_builder.build()
+
+
 
 	def _clean_raw_csv(self, df: DataFrame):
 		# Select Subsets based on config

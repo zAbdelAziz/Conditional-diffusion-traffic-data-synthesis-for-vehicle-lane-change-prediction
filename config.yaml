@@ -37,6 +37,11 @@ datasets:
     subsets:
       locations:
         - i-80
+    preprocessing:
+      dt: 0.1
+      sg_window: 41
+      sg_polyorder: 3
+
 
 models:
   GaussianDiffusion:
