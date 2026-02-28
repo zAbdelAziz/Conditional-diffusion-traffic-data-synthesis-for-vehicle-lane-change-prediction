@@ -14,10 +14,26 @@ runner:
     diffusion: GaussianDiffusion
     synth: UNETDenoiser
     downstream: BiGRUClassifier
+  dirs:
+    root_datasets: datasets-files
+    root_models: models-checkpoints
+    raw_datasets: ${runner.dirs.root_datasets}/raw
+    refactored_datasets: ${runner.dirs.root_datasets}/refactored
+    synth_datasets: ${runner.dirs.root_datasets}/synth
+    downstreamModel: ${runner.dirs.root_models}/downstream
+    synthModel: ${runner.dirs.root_models}/synth
 
 datasets:
   ngsim:
     clsName: NgsimDataset
+    columns:
+      - Vehicle_ID
+      - Frame_ID
+      - Local_X
+      - Local_Y
+      - Lane_ID
+      - Preceding
+      - Following
 
 models:
   GaussianDiffusion:
