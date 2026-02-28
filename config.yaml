@@ -1,0 +1,66 @@
+runner:
+  name: framework-test-1
+  seed: 42
+  dataset:
+    train: ngsim
+    test: ngsim
+    analyze: false
+    online_synth: false
+    synth_samples: 1000
+  train:
+    synth: true
+    downstream: true
+  model:
+    diffusion: GaussianDiffusion
+    synth: UNETDenoiser
+    downstream: BiGRUClassifier
+
+datasets:
+  ngsim:
+    clsName: NgsimDataset
+
+models:
+  GaussianDiffusion:
+    clsName: GaussianDiffusionModel
+    hyperparams:
+      name: test
+  UNETDenoiser:
+    clsName: UNETDenoiserModel
+    hyperparams:
+      name: test
+  TransformerDenoiser:
+    clsName: TransformerDenoiserModel
+    hyperparams:
+      name: test
+
+  BiGRUClassifier:
+    clsName: BiGRUClassifierModel
+    hyperparams:
+      name: test
+  TransformerBiGRUClassifier:
+    clsName: TransformerBiGRUClassifierModel
+    hyperparams:
+      name: test
+  xLSTMClassifier:
+    clsName: xLSTMClassifierModel
+    hyperparams:
+      name: test
+
+trainers:
+  diffSynth:
+    clsName: SynthTrainer
+
+  downstream:
+    clsName: DownstreamTrainer
+
+logger:
+  path: logs
+  lock: false
+  level: debug
+  console: true
+  console_flush: false
+  bufferSize: 100
+  buf_threshold: 0
+
+wandb:
+  enabled: false
