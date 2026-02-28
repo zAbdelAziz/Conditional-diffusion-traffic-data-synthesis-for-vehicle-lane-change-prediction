@@ -11,12 +11,11 @@ class NgsimDataset(BaseDataset):
 	def __init__(self, name: str, raw: bool = False):
 		super().__init__(name=name, raw=raw)
 
-		# # TODO Enable after cleaning the _build_refactored
-		# # X Shape: [n_samples, n_lookback, n_features]
-		# # Numer of Timesteps
-		# self.T = self.X.shape[1]
-		# # Number of features
-		# self.D = self.X.shape[2]
+		# X Shape: [n_samples, n_lookback, n_features]
+		# Numer of Timesteps
+		self.T = self.X.shape[1]
+		# Number of features
+		self.D = self.X.shape[2]
 
 	def _build_refactored(self):
 		# Read the Raw Dataset

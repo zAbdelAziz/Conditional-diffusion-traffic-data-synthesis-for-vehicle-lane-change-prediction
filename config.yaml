@@ -90,12 +90,71 @@ models:
     hyperparams:
       name: test
 
+
 trainers:
   diffSynth:
     clsName: SynthTrainer
+    epochs: 100
+    batch_size: 64
+    clip_grad: true
+    standardize: true
+    balance_labels: true
+    y_conditional: true
+    split:
+      mode: group
+      train: 0.70
+      valid: 0.15
+      test: 0.15
+    loss:
+      clsName: MSELoss
+      snr_gamma: 5.0
+      snr_eps: 1e-12
+    optimizer:
+      clsName: AdamW
+      params:
+        lr: 0.001
+        weight_decay: 0.01
+    scheduler:
+      clsName: CosineAnnealingLR
+      step_per: epoch
+      params:
+        T_max: ${trainers.diffSynth.epochs}
+        eta_min: 0.00005
+    checkpoint:
+      enabled: true
+      metric: "valid/loss"
+      mode: "min"
 
   downstream:
     clsName: DownstreamTrainer
+    epochs: 20
+    batch_size: 64
+    clip_grad: true
+    standardize: true
+    balance_labels: true
+    split:
+      mode: group
+      train: 0.70
+      valid: 0.15
+      test: 0.15
+    loss:
+      clsName: CrossEntropyLoss
+    optimizer:
+      clsName: AdamW
+      params:
+        lr: 0.0007
+        weight_decay: 5e-3
+    scheduler:
+      clsName: CosineAnnealingLR
+      step_per: epoch
+      params:
+        T_max: ${trainers.downstream.epochs}
+        eta_min: 1e-5
+    checkpoint:
+      enabled: true
+      metric: "valid/acc"
+      mode: "max"
+      every_n_epochs: 1
 
 logger:
   path: logs

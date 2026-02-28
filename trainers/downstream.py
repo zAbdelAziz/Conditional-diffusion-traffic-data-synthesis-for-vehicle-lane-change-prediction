@@ -1,6 +1,7 @@
+from trainers.base import BaseTrainer
 
 
-class DownstreamTrainer:
+class DownstreamTrainer(BaseTrainer):
 	def __init__(self, **kwargs):
 		super().__init__()
 

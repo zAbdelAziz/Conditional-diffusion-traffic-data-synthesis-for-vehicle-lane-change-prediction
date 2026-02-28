@@ -1,6 +1,7 @@
+from trainers.base import BaseTrainer
 
 
-class SynthTrainer:
+class SynthTrainer(BaseTrainer):
 	def __init__(self, **kwargs):
 		super().__init__()
 

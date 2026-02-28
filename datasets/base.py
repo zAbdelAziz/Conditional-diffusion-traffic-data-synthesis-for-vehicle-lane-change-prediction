@@ -162,3 +162,9 @@ class BaseDataset(Dataset):
 			raise RuntimeError(f'Unable to save {self.name} dataset because X or y or meta are None')
 		self.meta.to_csv(self.paths[f'{path_prefix}_meta'], index=False)
 		savez_compressed(self.paths[f'{path_prefix}_npz'], X=self.X, y=self.y)
+
+	def analyze(self):
+		pass
+
+	def __len__(self):
+		return self.X.shape[0]
