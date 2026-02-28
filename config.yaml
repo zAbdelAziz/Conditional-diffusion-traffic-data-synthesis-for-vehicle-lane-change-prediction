@@ -34,6 +34,9 @@ datasets:
       - Lane_ID
       - Preceding
       - Following
+    subsets:
+      locations:
+        - i-80
 
 models:
   GaussianDiffusion:

@@ -66,6 +66,7 @@ class BaseDataset(Dataset):
 
 	def _read_raw(self):
 		# Read RAW CSV and clean it
+		# Logic Should be identical in all datasets [Cleaning is not]
 		raw_path = self.paths["raw"]
 		if not raw_path.exists():
 			raise FileNotFoundError(f"dataset {self.name} raw file not found: {raw_path}")
@@ -73,7 +74,7 @@ class BaseDataset(Dataset):
 		# Load selected columns as strings [the values/number of ngsim are in eu format! not sure why! so I just read as str and made a clean method]
 		self.log.info('Reading Raw CSV')
 
-		columns = self.cfg.datasets[self.name].columns
+		columns = getattr(self.cfg.datasets[self.name], 'columns', None)
 		if columns is None:
 			df = read_csv(raw_path, dtype=str)
 		else:
@@ -83,7 +84,8 @@ class BaseDataset(Dataset):
 				if col not in df.columns:
 					raise KeyError(f"Missing required column '{col}' in {raw_path}. Found: {list(df.columns)}")
 
-		# Clean dataframe [Filters, Dtypes, Drop Nans, Sort]
+		# Clean dataframe [Subsets, Dtypes, Drop Nans, Sort]
+		# Should be done in the child class
 		df = self._clean_raw_csv(df=df)
 		return df
 
