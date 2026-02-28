@@ -1,7 +1,7 @@
 from os.path import join
 from pathlib import Path
 
-from numpy import savez_compressed, load
+from numpy import savez_compressed, load, random, flatnonzero, concatenate, bincount, int64
 from pandas import read_csv, DataFrame
 from torch.utils.data import Dataset
 
@@ -37,7 +37,10 @@ class BaseDataset(Dataset):
 					self._build_refactored()
 				# Otherwise do nothing [Loads the dataset from child class]
 			# Otherwise [meta, npz] exists so we keep the raw as false [Loads the dataset from child class]
-		
+
+		# Vision Threshold
+		self.vision_R = None
+
 		# Load the Refactored/Synthetic Dataset
 		# # TODO Enable after cleaning the _build_refactored
 		# self.X, self.y, self.meta = self._load_refactored()
@@ -121,6 +124,37 @@ class BaseDataset(Dataset):
 				'ref_meta': ref_meta, 'ref_npz': ref_npz,
 				'syn_meta': syn_meta, 'syn_npz': syn_npz,
 				'ref_std': ref_std, 'derived_std': derived_std}
+
+	def balance_classes(self):
+		rng = random.default_rng(self.cfg.runner.seed)
+
+		idx0 = flatnonzero(self.y == 0)
+		idx1 = flatnonzero(self.y == 1)
+		idx2 = flatnonzero(self.y == 2)
+
+		n0, n1, n2 = len(idx0), len(idx1), len(idx2)
+		if min(n0, n1, n2) == 0:
+			raise RuntimeError(f"At least one class is empty: keep={n0} left={n1} right={n2}")
+
+		target_n = min(n0, n1, n2)  # exact 1/3 balance
+		self.log.info(f'Number of samples per class = {target_n} from {n0, n1, n2}')
+		s0 = rng.choice(idx0, size=target_n, replace=False)
+		s1 = rng.choice(idx1, size=target_n, replace=False)
+		s2 = rng.choice(idx2, size=target_n, replace=False)
+
+		sel = concatenate([s0, s1, s2])
+		rng.shuffle(sel)
+
+		self.X = self.X[sel]
+		self.y = self.y[sel]
+		self.meta = self.meta.iloc[sel].reset_index(drop=True)
+
+		counts = bincount(self.y.astype(int64), minlength=3)
+		self.log.info(
+			f"[{self.name}] Balanced to min class: target_n={target_n} "
+			f"original_counts={[n0, n1, n2]} new_counts={counts.tolist()}"
+		)
+		return self.X, self.y, self.meta
 
 	def save(self):
 		path_prefix = 'ref' if self.raw else 'syn'

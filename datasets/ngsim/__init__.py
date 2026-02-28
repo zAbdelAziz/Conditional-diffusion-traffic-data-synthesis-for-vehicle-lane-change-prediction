@@ -22,12 +22,19 @@ class NgsimDataset(BaseDataset):
 		# Read the Raw Dataset
 		df = self._read_raw()
 
-		# Split Refactoring in another class [cuz its big]
+		# I Split Refactoring in another class [cuz its big]
 		# Converts the csv to a time series
 		feature_builder = DiffusionFeatureBuilder(df = df)
-		feature_builder.build()
+		self.X, self.y, self.meta = feature_builder.build()
 
+		# Balance Classes
+		if self.cfg.datasets[self.name].preprocessing.balance_classes:
+			self.balance_classes()
 
+		# Save
+		self.save()
+
+		self.vision_R = feature_builder.vision_R
 
 	def _clean_raw_csv(self, df: DataFrame):
 		# Select Subsets based on config

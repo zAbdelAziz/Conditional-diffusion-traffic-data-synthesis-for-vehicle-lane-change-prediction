@@ -39,8 +39,28 @@ datasets:
         - i-80
     preprocessing:
       dt: 0.1
-      sg_window: 41
-      sg_polyorder: 3
+      balance_classes: true
+      smoothing:
+        sg_window: 41
+        sg_polyorder: 3
+      sequence:
+        length: 50
+        stride: 30
+        horizon: 30
+        min_track_len: 120
+      labeling:
+        # horizon | boundary
+        method: boundary
+        # for boundary [segments] in radians
+        theta_start: 0.02
+        theta_end: 0.02
+        # for boundary [segments]
+        consec: 3
+      vision_threshold:
+        tol: 0.001
+        pad: 1.05
+        quantile: 0.999
+        max_frames: 50000
 
 
 models:
