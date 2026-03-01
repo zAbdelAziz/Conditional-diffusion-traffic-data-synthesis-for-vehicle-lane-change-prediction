@@ -71,7 +71,15 @@ models:
   UNETDenoiser:
     clsName: UNETDenoiserModel
     hyperparams:
-      name: test
+      data_dim: 14
+      base_channels: 128
+      cond_dim: 256
+      dropout: 0.1
+      attn_heads: 8
+      use_attn_mid: true
+      use_attn_low: true
+      num_classes: 3
+      cfg_drop_prob: 0.15
   TransformerDenoiser:
     clsName: TransformerDenoiserModel
     hyperparams:
@@ -169,4 +177,19 @@ logger:
   buf_threshold: 0
 
 wandb:
-  enabled: false
+  enabled: true
+  project: thesis
+  entity: null
+  tags:
+    - ${runner.dataset.train}
+    - ${runner.dataset.test}
+    - ${runner.model.downstream}
+  notes: ""
+  # Log Artifacts
+  log_model: false
+  watch:
+    enabled: false
+    # "gradients" | "parameters" | "all"
+    log: "gradients"
+    log_freq: 100
+  log_confusion: true

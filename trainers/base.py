@@ -1,4 +1,5 @@
 from os import cpu_count, replace
+from sys import platform
 from os.path import join
 from pathlib import Path
 
@@ -112,9 +113,17 @@ class BaseTrainer:
 
 	def _build_loaders(self):
 		g = Generator()
+		# Disable num_workers if on windows
+		n_workers = 0 if platform.startswith("win") else min(8, cpu_count() or 1)
+
 		# Data Loader Configuration
 		loader_cfg = {'batch_size': self.cfg.trainers[self.name].batch_size, 'generator': g, 'pin_memory': True,
-					  'num_workers': min(8, cpu_count() or 1), 'persistent_workers': True, 'prefetch_factor': 4}
+					  'num_workers': n_workers, 'persistent_workers': (n_workers > 0)}
+
+		# prefetch_factor is only valid when num_workers > 0
+		if n_workers > 0:
+			loader_cfg["prefetch_factor"] = 4
+
 		# Loaders
 		self.train_loader = DataLoader(self.train_dataset, shuffle=True, **loader_cfg)
 		self.valid_loader = DataLoader(self.valid_dataset, shuffle=False, **loader_cfg)
