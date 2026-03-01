@@ -1,6 +1,8 @@
 from numpy import rint
 from pandas import DataFrame
 
+from torch import from_numpy, tensor, long
+
 from datasets.base import BaseDataset
 from datasets.ngsim.diffusion_feature_builder import DiffusionFeatureBuilder
 from utils.misc import is_all
@@ -84,3 +86,10 @@ class NgsimDataset(BaseDataset):
 			self.log.info(f'Casting Following to int')
 			df["Following"] = rint(df["Following"].fillna(0.0)).astype(int)
 		return df
+
+
+	def __getitem__(self, idx: int):
+		# [T,D]
+		x = from_numpy(self.X[idx])
+		y = tensor(self.y[idx], dtype=long)
+		return x, y

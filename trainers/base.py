@@ -92,8 +92,8 @@ class BaseTrainer:
 			rng.shuffle(uniq)
 			
 			# Split By Group [Vehicle]
-			train_idx, valid_idx, test_idx = split_by_group(p_train=p_train, p_valid=p_valid, p_test=p_test,
-															uniq=uniq, idx=idx, vids=vids, ignore_test=ignore_test)
+			train_idx, valid_idx, test_idx, idx = split_by_group(p_train=p_train, p_valid=p_valid, p_test=p_test,
+																 uniq=uniq, idx=idx, vids=vids, ignore_test=ignore_test)
 		# Split Randomly
 		elif mode == 'random':
 			train_idx, valid_idx, test_idx = split_random(p_train=p_train, p_valid=p_valid, p_test=p_test,
@@ -237,11 +237,11 @@ class BaseTrainer:
 			self.run_name = f"{self.cfg.runner.name}{'-d' if self.cfg.runner.train.downstream else ''}{'-s' if self.cfg.runner.train.synth else ''}"
 
 		# choose root dir based on trainer type (downstream vs synth)
-		root = self.cfg.runner.dirs.rootModels
+		root = self.cfg.runner.dirs.root_models
 		if self.name == "downstream":
-			base_dir = self.cfg.runner.dirs.downstreamModel
+			base_dir = self.cfg.runner.dirs.downstream_model
 		elif self.name == "diffSynth":
-			base_dir = self.cfg.runner.dirs.synthModel
+			base_dir = self.cfg.runner.dirs.synth_model
 		else:
 			base_dir = join(Path(root), self.run_name)
 

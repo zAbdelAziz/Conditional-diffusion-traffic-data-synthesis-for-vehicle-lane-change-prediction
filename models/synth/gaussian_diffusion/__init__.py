@@ -1,5 +1,5 @@
+from torch.nn import Module
 
-
-class GaussianDiffusionModel:
+class GaussianDiffusionModel(Module):
     def __init__(self, **kwargs):
         super().__init__()

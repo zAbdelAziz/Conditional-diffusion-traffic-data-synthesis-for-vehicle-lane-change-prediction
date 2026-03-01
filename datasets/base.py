@@ -16,19 +16,22 @@ class BaseDataset(Dataset):
 		
 		self.cfg = Config()
 		self.log = Logger(self.cfg.runner.name)
-		
+
+		# Vision Threshold
+		self.vision_R = None
+
 		# Build Paths from config [Raw, Refactored, Synthetic, Standardizers]	
 		self.paths = self._resolve_paths()
 		
 		# Build Refactored [Timeseries] dataset from raw csv
 		# Logic Only [actual refactoring is done by the child class]
 		if self.raw:
-			# If Refactored Dataset is not available we build it
+			# If Refactored Dataset is not available I build it
 			if (not self.paths['ref_meta'].exists()) or (not self.paths['ref_npz'].exists()):
 				self._build_refactored()
 			# Otherwise do nothing [Loads the dataset from child class]
 		else:
-			# If Synthetic Data is not available we fall back to refactored raw data [Flip the raw to True]
+			# If Synthetic Data is not available I fall back to refactored raw data [Flip the raw to True]
 			if (not self.paths['syn_meta'].exists()) or (not self.paths['syn_npz'].exists()):
 				self.log.error(f'Synthetic data for {self.name} dataset doesnt exist so falling back to raw data')
 				self.raw = True
@@ -36,14 +39,11 @@ class BaseDataset(Dataset):
 				if (not self.paths['ref_meta'].exists()) or (not self.paths['ref_npz'].exists()):
 					self._build_refactored()
 				# Otherwise do nothing [Loads the dataset from child class]
-			# Otherwise [meta, npz] exists so we keep the raw as false [Loads the dataset from child class]
+			# Otherwise [meta, npz] exists so I keep the raw as false [Loads the dataset from child class]
 
-		# Vision Threshold
-		self.vision_R = None
 
 		# Load the Refactored/Synthetic Dataset
-		# # TODO Enable after cleaning the _build_refactored
-		# self.X, self.y, self.meta = self._load_refactored()
+		self.X, self.y, self.meta = self._load_refactored()
 
 	def _build_refactored(self):
 		# Different Datasets Has different Preprocessing and cleaning
@@ -64,7 +64,16 @@ class BaseDataset(Dataset):
 		# Sanity checks
 		if len(meta) != data['X'].shape[0] or data['X'].shape[0] != data['y'].shape[0]:
 			raise RuntimeError(f'Cache mismatch: meta={len(meta)}, X={data['X'].shape}, y={data['y'].shape}')
-		
+
+		# Load Vision_R
+		try:
+			if self.paths['ref_std'].exists() and self.vision_R is None:
+				std = load(self.paths['ref_std'])
+				if 'vision_R' in std:
+					self.vision_R = float(std['vision_R'])
+		except Exception:
+			pass
+
 		return data['X'], data['y'], meta
 
 	def _read_raw(self):

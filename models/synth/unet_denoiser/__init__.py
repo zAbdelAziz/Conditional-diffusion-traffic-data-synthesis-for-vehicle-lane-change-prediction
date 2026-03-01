@@ -1,5 +1,8 @@
+from torch.nn import Module, Conv1d
 
 
-class UNETDenoiserModel:
+class UNETDenoiserModel(Module):
     def __init__(self, **kwargs):
         super().__init__()
+
+        self.in_proj = Conv1d(14, 128, kernel_size=3, padding=1)

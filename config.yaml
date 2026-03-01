@@ -1,5 +1,5 @@
 runner:
-  name: framework-test-1
+  name: trainer-test-1
   seed: 42
   dataset:
     train: ngsim
@@ -20,8 +20,8 @@ runner:
     raw_datasets: ${runner.dirs.root_datasets}/raw
     refactored_datasets: ${runner.dirs.root_datasets}/refactored
     synth_datasets: ${runner.dirs.root_datasets}/synth
-    downstreamModel: ${runner.dirs.root_models}/downstream
-    synthModel: ${runner.dirs.root_models}/synth
+    downstream_model: ${runner.dirs.root_models}/downstream
+    synth_model: ${runner.dirs.root_models}/synth
 
 datasets:
   ngsim:
@@ -62,12 +62,12 @@ datasets:
         quantile: 0.999
         max_frames: 50000
 
-
 models:
   GaussianDiffusion:
     clsName: GaussianDiffusionModel
     hyperparams:
-      name: test
+      T: 175
+      beta_schedule: cosine
   UNETDenoiser:
     clsName: UNETDenoiserModel
     hyperparams:
@@ -90,16 +90,16 @@ models:
     hyperparams:
       name: test
 
-
 trainers:
   diffSynth:
     clsName: SynthTrainer
-    epochs: 100
+    epochs: 2
     batch_size: 64
     clip_grad: true
     standardize: true
     balance_labels: true
     y_conditional: true
+    compile: false
     split:
       mode: group
       train: 0.70
@@ -124,7 +124,10 @@ trainers:
       enabled: true
       metric: "valid/loss"
       mode: "min"
-
+    sampling:
+      steps: ${models.${runner.model.diffusion}.hyperparams.T}
+      method: ddpm
+      eta: 0.0
   downstream:
     clsName: DownstreamTrainer
     epochs: 20
