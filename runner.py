@@ -132,7 +132,6 @@ class Runner:
 		self.log.info('Building downstream Model')
 		self.downstream_model = getattr(models, self.cfg.models[self.downstream_model_name].clsName)(**self.cfg.models[self.downstream_model_name].hyperparams)
 	
-		# TODO Pass Trainer Parameters
 		self.log.info('Building downstream Trainer')
 		self.downstream_trainer = DownstreamTrainer(train_dataset=self.dataset, test_dataset=test_dataset, model=self.downstream_model)
 	

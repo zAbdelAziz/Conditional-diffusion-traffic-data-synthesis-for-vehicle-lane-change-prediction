@@ -35,8 +35,8 @@ class SynthTrainer(BaseTrainer):
 			train_loss, train_metrics = self._train_epoch()
 			val_loss, val_metrics = self._eval_epoch(self.valid_loader)
 
-			self._log_epoch("train", epoch, train_loss, train_metrics)
-			self._log_epoch("valid", epoch, val_loss, val_metrics)
+			self._log_epoch("train", epoch, train_loss)
+			self._log_epoch("valid", epoch, val_loss)
 
 			self._save_best(epoch, val_loss)
 
@@ -45,7 +45,7 @@ class SynthTrainer(BaseTrainer):
 			self.load_checkpoint(self.best_checkpoint_path, load_optimizer=False, load_scheduler=False)
 
 		test_loss, test_metrics = self._eval_epoch(self.test_loader)
-		self._log_epoch("test", self.epochs, test_loss, test_metrics)
+		self._log_epoch("test", self.epochs, test_loss)
 
 		try:
 			if self.cfg.trainers.diffSynth.compile:
@@ -156,7 +156,7 @@ class SynthTrainer(BaseTrainer):
 		if is_best:
 			self.save_checkpoint(epoch=epoch, metric_name=metric_key, metric_value=score, is_best=True, tag="best")
 
-	def _log_epoch(self, split: str, epoch: int, loss: float, metrics: dict):
+	def _log_epoch(self, split: str, epoch: int, loss: float):
 		self.log.info(f"{split.upper()} epoch={epoch:03d} mse={loss:.6f}")
 		wb = {
 			f"{split}/loss": float(loss),
