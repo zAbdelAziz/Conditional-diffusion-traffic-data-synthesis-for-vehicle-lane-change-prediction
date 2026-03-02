@@ -15,7 +15,7 @@ from torch import compile, randint, randn_like, randn, long, no_grad, inference_
 from tqdm import tqdm
 
 from trainers.base import BaseTrainer
-from utils.standardizer.diffusion_standardizer import DiffusionStandardizer
+from utils.standardizer import DiffusionStandardizer
 
 from utils.visuals.models import model_params, plot_model
 
@@ -25,7 +25,8 @@ class SynthTrainer(BaseTrainer):
 		super().__init__(name="diffSynth", train_dataset=train_dataset, test_dataset=test_dataset, model=model)
 
 		# Standardize Dataset
-		self._build_standardizer()
+		if self.cfg.trainers.diffSynth.standardize:
+			self._build_standardizer()
 
 		self.epochs = self.cfg.trainers.diffSynth.epochs
 		

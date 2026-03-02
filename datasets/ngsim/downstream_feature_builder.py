@@ -368,7 +368,7 @@ class DownstreamFeatureBuilder:
 	def _finite_difference_1(x: ndarray, dt: float):
 		"""First-order finite difference along time axis with zero at t=0"""
 		dxdt = zeros_like(x, dtype=float32)
-		# Forward difference for t>=1 and t=0 stays 0.
+		# Forward difference for t>=1 and t=0 stays 0
 		if x.shape[1] > 1:
 			dxdt[:, 1:, ...] = (x[:, 1:, ...] - x[:, :-1, ...]) / dt
 		return dxdt

@@ -8,7 +8,7 @@ runner:
     online_synth: false
     synth_samples: 1000
   train:
-    synth: true
+    synth: false
     downstream: true
   model:
     diffusion: GaussianDiffusion
