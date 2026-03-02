@@ -103,9 +103,9 @@ class Runner:
 			raise ValueError('runner.dataset.synth_samples must be a positive integer to generate synthetic data')
 
 		# Generate and Save Synthetic Dataset
-		# self.log.info(f'Generating synthetic dataset: N={n_syn}')
-		# X_syn, y_syn, meta_syn = self.synth_trainer.generate_synthetic(num_samples=n_syn)
-		# self.save_synth_dataset(X=X_syn, y=y_syn, meta=meta_syn)
+		self.log.info(f'Generating synthetic dataset: N={n_syn}')
+		X_syn, y_syn, meta_syn = self.synth_trainer.generate_synthetic(num_samples=n_syn)
+		self.save_synth_dataset(X=X_syn, y=y_syn, meta=meta_syn)
 
 		# Use output as synthetic dataset [Technically just reload the class with raw=False]
 		self.dataset = getattr(datasets, self.cfg.datasets[self.train_dataset_name].clsName)(name=self.train_dataset_name, raw=False)

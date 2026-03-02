@@ -374,7 +374,6 @@ class DiffusionFeatureBuilder:
 		changes = flatnonzero(lanes_all[1:] != lanes_all[:-1]) + 1
 
 		segments = []
-
 		for c in changes:
 			delta = lanes_all[c] - lanes_all[c - 1]
 			delta_sign = 1 if delta > 0 else -1
@@ -410,7 +409,6 @@ class DiffusionFeatureBuilder:
 
 			if s < e:
 				segments.append((s, e, delta_sign))
-
 		return segments
 
 	def derive_vision_R(self):

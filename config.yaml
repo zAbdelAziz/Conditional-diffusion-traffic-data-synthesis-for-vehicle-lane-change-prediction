@@ -101,7 +101,7 @@ models:
 trainers:
   diffSynth:
     clsName: SynthTrainer
-    epochs: 20
+    epochs: 2
     batch_size: 64
     clip_grad: true
     standardize: true
