@@ -101,7 +101,7 @@ models:
 trainers:
   diffSynth:
     clsName: SynthTrainer
-    epochs: 2
+    epochs: 20
     batch_size: 64
     clip_grad: true
     standardize: true
@@ -120,14 +120,14 @@ trainers:
     optimizer:
       clsName: AdamW
       params:
-        lr: 0.001
+        lr: 0.0007
         weight_decay: 0.01
     scheduler:
       clsName: CosineAnnealingLR
       step_per: epoch
       params:
         T_max: ${trainers.diffSynth.epochs}
-        eta_min: 0.00005
+        eta_min: 0.0001
     checkpoint:
       enabled: true
       metric: "valid/loss"
@@ -160,7 +160,7 @@ trainers:
       step_per: epoch
       params:
         T_max: ${trainers.downstream.epochs}
-        eta_min: 1e-5
+        eta_min: 0.0001
     checkpoint:
       enabled: true
       metric: "valid/acc"

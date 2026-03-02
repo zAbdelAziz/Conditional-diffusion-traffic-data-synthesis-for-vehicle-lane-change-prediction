@@ -1,15 +1,23 @@
+from re import sub
+from os.path import join
+from pathlib import Path
+
+import wandb
+
 from pandas import DataFrame
 from numpy import array, random, full, arange, concatenate, empty, zeros, load, savez_compressed, int32, int64, float32
 
 from torch.utils.data import Subset
 from torch.nn.functional import mse_loss
 from torch.nn.utils import clip_grad_norm_
-from torch import compile, randint, randn_like, long, no_grad, inference_mode, from_numpy, cuda
+from torch import compile, randint, randn_like, randn, long, no_grad, inference_mode, from_numpy, cuda
 
 from tqdm import tqdm
 
 from trainers.base import BaseTrainer
 from utils.standardizer.diffusion_standardizer import DiffusionStandardizer
+
+from utils.visuals.models import model_params, plot_model
 
 
 class SynthTrainer(BaseTrainer):
@@ -23,6 +31,7 @@ class SynthTrainer(BaseTrainer):
 		
 		self.diffusion = diffusion.to(self.device)
 		self.global_step = 0
+		self.visualize_models()
 
 		self.clip_grad = bool(getattr(self.cfg.trainers.diffSynth, "clip_grad", False))
 		# conditional diffusion
@@ -277,3 +286,38 @@ class SynthTrainer(BaseTrainer):
 			if hasattr(self.test_dataset, "X"):
 				self.test_dataset.X = self.standardizer.transform(self.test_dataset.X, self.std_mu, self.std_sigma)
 
+	def visualize_models(self, *, tag: str = "synth", seq_len: int = 128, conditional: bool = True):
+
+		params_count_path = Path(join(self.ckpt_dir, 'params_count.txt'))
+		params_count = model_params(self.model, params_count_path)
+
+		B = 2
+		D = self.main_dataset.D
+		T = int(seq_len)
+
+		dev = self.device
+		x_t = randn(B, T, D, device=dev)
+		t = randint(0, 1000, (B,), device=dev, dtype=long)
+		y = None
+		if conditional:
+			ncls = getattr(self.model, "num_classes", None)
+			if ncls is not None:
+				y = randint(0, int(ncls), (B,), device=dev, dtype=long)
+
+		graph_path = plot_model(self.model, (x_t, t, y), out_path=Path(join(self.ckpt_dir, 'graph.png')))
+
+		if self.wandb_run is not None:
+			# Log files as an artifact (best for reproducibility)
+			art = wandb.Artifact(name=f"{sub(r"[^A-Za-z0-9._-]+", "_", self.run_name)}-viz-{tag}", type="visualization")
+			art.add_file(str(params_count_path))
+			art.add_file(str(graph_path))
+			wandb.log_artifact(art)
+
+			# Log images into media tab
+			media = {}
+			if str(graph_path).endswith(".png"):
+				media[f"viz/{tag}"] = wandb.Image(str(graph_path))
+			if media:
+				self._wandb_log(media, epoch=0)
+
+		self.log.info(f"Saved visualizations to: {self.ckpt_dir}")

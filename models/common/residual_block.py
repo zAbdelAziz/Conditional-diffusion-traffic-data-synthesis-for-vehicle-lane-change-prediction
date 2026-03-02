@@ -34,7 +34,7 @@ class ResBlock1D(Module):
 		# h remains [B,C,T]
 		# h = (h * (1 + scale)) + shift
 		h = h * (1.0 + scale[:, :, None]) + shift[:, :, None]
-		n2 = self.gn2(x)
+		n2 = self.gn2(h)
 		n2 = silu(n2)
 		n2 = self.drop(n2)
 		h = self.conv2(n2)
