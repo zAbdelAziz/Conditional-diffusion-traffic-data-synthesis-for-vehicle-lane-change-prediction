@@ -1,12 +1,12 @@
 runner:
-  name: trainer-test-2
+  name: UNET-BiGRU-NGSIM[14-61]
   seed: 42
   dataset:
     train: ngsim
     test: ngsim
     analyze: false
     online_synth: false
-    synth_samples: 1000
+    synth_samples: 200000
   train:
     synth: false
     downstream: true
@@ -105,7 +105,7 @@ models:
 trainers:
   diffSynth:
     clsName: SynthTrainer
-    epochs: 2
+    epochs: 20
     batch_size: 64
     clip_grad: true
     standardize: true
@@ -131,7 +131,7 @@ trainers:
       step_per: epoch
       params:
         T_max: ${trainers.diffSynth.epochs}
-        eta_min: 0.0001
+        eta_min: 0.00001
     checkpoint:
       enabled: true
       metric: "valid/loss"
@@ -164,7 +164,7 @@ trainers:
       step_per: epoch
       params:
         T_max: ${trainers.downstream.epochs}
-        eta_min: 0.0001
+        eta_min: 0.00005
     checkpoint:
       enabled: true
       metric: "valid/acc"

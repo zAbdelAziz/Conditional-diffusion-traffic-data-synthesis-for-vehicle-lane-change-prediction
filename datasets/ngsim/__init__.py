@@ -1,3 +1,5 @@
+from typing import Union
+
 from numpy import rint
 from pandas import DataFrame
 
@@ -87,6 +89,8 @@ class NgsimDataset(BaseDataset):
 			df["Following"] = rint(df["Following"].fillna(0.0)).astype(int)
 		return df
 
+	def analyze(self):
+		pass
 
 	def __getitem__(self, idx: int):
 		# [T,D]

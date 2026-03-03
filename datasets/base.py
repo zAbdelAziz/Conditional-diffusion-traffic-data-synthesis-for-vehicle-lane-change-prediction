@@ -1,5 +1,6 @@
 from os.path import join
 from pathlib import Path
+from typing import Union
 
 from numpy import savez_compressed, load, random, flatnonzero, concatenate, bincount, int64
 from pandas import read_csv, DataFrame
@@ -99,6 +100,11 @@ class BaseDataset(Dataset):
 		# Clean dataframe [Subsets, Dtypes, Drop Nans, Sort]
 		# Should be done in the child class
 		df = self._clean_raw_csv(df=df)
+
+		# Save Clean for analysis
+		clean_path = f'{join(self.cfg.runner.dirs.raw_datasets, f"{self.name}-clean")}.csv'
+		df.to_csv(clean_path, index=False)
+		self.log.info(f'Saved Clean Dataset for analysis in {clean_path}')
 		return df
 
 	def _clean_raw_csv(self, df: DataFrame):
@@ -159,10 +165,7 @@ class BaseDataset(Dataset):
 		self.meta = self.meta.iloc[sel].reset_index(drop=True)
 
 		counts = bincount(self.y.astype(int64), minlength=3)
-		self.log.info(
-			f"[{self.name}] Balanced to min class: target_n={target_n} "
-			f"original_counts={[n0, n1, n2]} new_counts={counts.tolist()}"
-		)
+		self.log.info(f"[{self.name}] Balanced to min class: target_n={target_n} original_counts={[n0, n1, n2]} new_counts={counts.tolist()}")
 		return self.X, self.y, self.meta
 
 	def save(self):
@@ -173,7 +176,7 @@ class BaseDataset(Dataset):
 		savez_compressed(self.paths[f'{path_prefix}_npz'], X=self.X, y=self.y)
 
 	def analyze(self):
-		pass
+		raise NotImplementedError('Should be implemented in subclass')
 
 	def __len__(self):
 		return self.X.shape[0]

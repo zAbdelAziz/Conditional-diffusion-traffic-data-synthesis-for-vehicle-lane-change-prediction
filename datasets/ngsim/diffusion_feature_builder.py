@@ -1,4 +1,5 @@
 from typing import Sequence
+from os.path import join
 
 from pandas import DataFrame
 from numpy import (array, ndarray, arange, zeros, flatnonzero, asarray,
@@ -8,6 +9,7 @@ from numpy import (array, ndarray, arange, zeros, flatnonzero, asarray,
 from tqdm import tqdm
 
 from utils.config import Config
+from utils.logger import Logger
 
 from datasets.ngsim.interpolate import InterpolateAndSmooth
 
@@ -18,6 +20,7 @@ class DiffusionFeatureBuilder:
 
 		self.name = "ngsim"
 		self.cfg = Config().datasets.ngsim.preprocessing
+		self.log = Logger(Config().runner.name)
 
 		# Slot indices to place neighbors in a stable order
 		self.LF, self.LR, self.RF, self.RR, self.F, self.R = 0, 1, 2, 3, 4, 5
@@ -42,6 +45,11 @@ class DiffusionFeatureBuilder:
 		# Compute velocities/accelerations and yaw proxy
 		interpolator = InterpolateAndSmooth(df=self.df, dt=self.cfg.dt, sg_window=self.cfg.smoothing.sg_window, sg_polyorder=self.cfg.smoothing.sg_polyorder)
 		self.df = interpolator.run()
+
+		# Save Clean for analysis
+		interpolated_path = f'{join(Config().runner.dirs.raw_datasets, f"{self.name}-interpolated-clean")}.csv'
+		self.df.to_csv(interpolated_path, index=False)
+		self.log.info(f'Saved Interpolated Dataset for analysis in {interpolated_path}')
 
 		# For each frame I built 2 maps
 		# lanes[lid] = {vehicle id, x, y}

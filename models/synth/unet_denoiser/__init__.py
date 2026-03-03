@@ -8,7 +8,7 @@ from models.common import SinusoidalTimeEmbedding, CondMLP, Upsample1D, Downsamp
 
 
 class UNETDenoiserModel(Module):
-    def __init__(self, data_dim: int = 33, base_channels: int = 128, cond_dim: int = 256,
+    def __init__(self, data_dim: int = 14, base_channels: int = 128, cond_dim: int = 256,
                  attn_heads: int = 8, use_attn_mid: bool = True, use_attn_low: bool = True,
                  num_classes: int = 3, dropout: float = 0.1, cfg_drop_prob: float = 0.15,):
         super().__init__()
@@ -156,7 +156,7 @@ class UNETDenoiserModel(Module):
         te = self.t_embed(t)
 
         # Null class index is the last embedding row
-        null = self.num_classes  # last embedding index is "null"
+        null = self.num_classes
 
         # If no labels provided, set all to null: y_idx [B]
         if y is None:
@@ -180,7 +180,7 @@ class UNETDenoiserModel(Module):
 
         # Label embedding lookup: y_idx [B] to ye [B,E]
         ye = self.y_embed(y_idx)
-        # Combine time + label then MLP: [B,E] TO [B,E].
+        # Combine time + label then MLP: [B,E] TO [B,E]
         cond = self.cond_mlp(te + ye)
         # Final conditioning vector used by FiLM in all ResBlocks
         return cond
