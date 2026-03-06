@@ -336,6 +336,11 @@ class BaseTrainer:
 		p = Path(join(self.ckpt_dir, f"{self.run_name}-best.pt"))
 		return str(p) if p.exists() else None
 
+	def checkpoint_path_for_tag(self, tag: str = "best"):
+		tag = str(tag).lower()
+		p = Path(join(self.ckpt_dir, f"{self.run_name}-{tag}.pt"))
+		return str(p) if p.exists() else None
+
 	@property
 	def _current_lr(self):
 		# helper for logging

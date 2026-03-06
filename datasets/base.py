@@ -1,6 +1,5 @@
 from os.path import join
 from pathlib import Path
-from typing import Union
 
 from numpy import savez_compressed, load, random, flatnonzero, concatenate, bincount, int64
 from pandas import read_csv, DataFrame

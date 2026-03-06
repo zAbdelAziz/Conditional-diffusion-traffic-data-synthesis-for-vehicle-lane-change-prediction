@@ -95,8 +95,38 @@ class Runner:
 		self.log.info('Building Synth trainer')
 		self.synth_trainer = SynthTrainer(train_dataset=self.raw_dataset, model=self.synth_model, diffusion=self.diff_model)
 
-		self.log.info('Starting Synth trainer')
-		self.synth_trainer.start()
+		ckpt_cfg = getattr(self.cfg.trainers.diffSynth, "checkpoint", None)
+		autoload = bool(getattr(ckpt_cfg, "autoload_for_sampling", True)) if ckpt_cfg is not None else True
+		autoload_tag = str(getattr(ckpt_cfg, "autoload_tag", "best")).lower() if ckpt_cfg is not None else "best"
+
+		ckpt_path = None
+		if autoload:
+			# Prefer "best" pointer if requested otherwise fallback to "last" if best missing (optional)
+			if autoload_tag == "best":
+				ckpt_path = self.synth_trainer.best_checkpoint_path
+			else:
+				ckpt_path = self.synth_trainer.checkpoint_path_for_tag(autoload_tag)
+
+			# fallback policy: if autoload_tag=="best" but missing try last
+			if ckpt_path is None and autoload_tag == "best":
+				ckpt_path = self.synth_trainer.checkpoint_path_for_tag("last")
+
+			if ckpt_path is not None:
+				self.log.info(f"Auto-loading synth checkpoint for sampling: {ckpt_path}")
+				self.synth_trainer.load_checkpoint(ckpt_path, load_optimizer=False, load_scheduler=False)
+
+		if self.cfg.runner.train.synth_generate_only:
+			if ckpt_path is None:
+				raise FileNotFoundError(
+					f"synth_generate_only=True but no checkpoint found for run_name='{self.synth_trainer.run_name}' "
+					f"in ckpt_dir='{self.synth_trainer.ckpt_dir}'. "
+					f"Expected e.g. '{self.synth_trainer.run_name}-best.pt' or '{self.synth_trainer.run_name}-last.pt'."
+				)
+			self.log.info(
+				"synth_generate_only=True -> skipping synth training, generating dataset from loaded checkpoint.")
+		else:
+			self.log.info('Starting Synth trainer')
+			self.synth_trainer.start()
 
 		n_syn = self.cfg.runner.dataset.synth_samples
 		if n_syn <= 0:
@@ -122,12 +152,15 @@ class Runner:
 			self.dataset = getattr(datasets, self.cfg.datasets[self.train_dataset_name].clsName)(name=self.train_dataset_name, raw=False)
 
 		# Initialize Test Dataset
-		if self.train_dataset_name == self.test_dataset_name:
-			self.log.info('Train/Test dataset names match -> training on SYNTH, testing on RAW')
-			test_dataset = getattr(datasets, self.cfg.datasets[self.test_dataset_name].clsName)(name=self.test_dataset_name, raw=True)
+		if self.dataset.paths['syn_meta'].exists():
+			if self.train_dataset_name == self.test_dataset_name:
+				self.log.info('Train/Test dataset names match -> training on SYNTH, testing on RAW')
+				test_dataset = getattr(datasets, self.cfg.datasets[self.test_dataset_name].clsName)(name=self.test_dataset_name, raw=True)
+			else:
+				self.log.info('Train/Test dataset names differ -> training on SYNTH, testing on SYNTH')
+				test_dataset = getattr(datasets, self.cfg.datasets[self.test_dataset_name].clsName)(name=self.test_dataset_name, raw=False)
 		else:
-			self.log.info('Train/Test dataset names differ -> training on SYNTH, testing on SYNTH')
-			test_dataset = getattr(datasets, self.cfg.datasets[self.test_dataset_name].clsName)(name=self.test_dataset_name, raw=False)
+			test_dataset = None
 
 		self.log.info('Building downstream Model')
 		self.downstream_model = getattr(models, self.cfg.models[self.downstream_model_name].clsName)(**self.cfg.models[self.downstream_model_name].hyperparams)

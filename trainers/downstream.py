@@ -1,6 +1,6 @@
-from numpy import load, array, float32, int32, int64, savez_compressed
+from numpy import load, array, float32, int32, savez_compressed
 
-from numpy import concatenate, ndarray
+from numpy import concatenate
 from torch import no_grad
 from torch.utils.data import Subset
 from torch.nn.utils import clip_grad_norm_

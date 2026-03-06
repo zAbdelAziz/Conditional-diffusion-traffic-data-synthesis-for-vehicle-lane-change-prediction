@@ -1,15 +1,16 @@
 runner:
-  name: UNET-BiGRU-NGSIM[14-61]
+  name: UNET[CFG]-BiGRU-NGSIM[14-61]
   seed: 42
   dataset:
     train: ngsim
     test: ngsim
     analyze: false
     online_synth: false
-    synth_samples: 200000
+    synth_samples: 200010
   train:
-    synth: false
+    synth: true
     downstream: true
+    synth_generate_only: false
   model:
     diffusion: GaussianDiffusion
     synth: UNETDenoiser
@@ -83,7 +84,13 @@ models:
   TransformerDenoiser:
     clsName: TransformerDenoiserModel
     hyperparams:
-      name: test
+      data_dim: 14
+      d_model: 256
+      n_heads: 8
+      n_layers: 6
+      dropout: 0.15
+      num_classes: 3
+      cfg_drop_prob: 0.05
 
   BiGRUClassifier:
     clsName: BiGRUClassifierModel
@@ -119,8 +126,6 @@ trainers:
       test: 0.15
     loss:
       clsName: MSELoss
-      snr_gamma: 5.0
-      snr_eps: 1e-12
     optimizer:
       clsName: AdamW
       params:
@@ -136,6 +141,8 @@ trainers:
       enabled: true
       metric: "valid/loss"
       mode: "min"
+      autoload_for_sampling: false
+      autoload_tag: "best"
     sampling:
       steps: ${models.${runner.model.diffusion}.hyperparams.T}
       method: ddpm
