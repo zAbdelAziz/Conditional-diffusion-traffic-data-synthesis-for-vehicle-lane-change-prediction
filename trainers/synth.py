@@ -10,7 +10,7 @@ from numpy import array, random, full, arange, concatenate, empty, zeros, load, 
 from torch.utils.data import Subset
 from torch.nn.functional import mse_loss
 from torch.nn.utils import clip_grad_norm_
-from torch import compile, randint, randn_like, randn, long, no_grad, inference_mode, from_numpy, cuda
+from torch import Tensor, ones, compile, randint, randn_like, randn, long, no_grad, inference_mode, from_numpy, cuda
 
 from tqdm import tqdm
 
@@ -39,6 +39,7 @@ class SynthTrainer(BaseTrainer):
 		self.conditional = y_conditional
 		
 		self.loss_fn = mse_loss
+		self.loss_weights = self._init_loss_weights()
 
 	def start(self):
 		for epoch in range(self.epochs):
@@ -134,12 +135,29 @@ class SynthTrainer(BaseTrainer):
 			return self.model(x_t, t, y)
 		else:
 			return self.model(x_t, t)
-	
+
+	def _init_loss_weights(self):
+		self.loss_weights = ones((self.main_dataset.D), device=self.device)
+		ego = 2.0
+		fr = 1.3
+		p = 0.9
+		self.loss_weights = Tensor([ego, ego, 1.0, 1.0, p, 1.0, 1.0, p, 1.0, 1.0, p, 1.0, 1.0, p, fr, fr, p, fr, fr, p]).to(self.device)
+		return self.loss_weights
+
 	def _calc_loss(self, eps_hat, eps, total_loss: float, total: int, batch_size):
-		loss = self.loss_fn(eps_hat, eps)
+		w = self.loss_weights.view(1, 1, -1)
+		base = ((eps_hat - eps) ** 2 * w).mean()
+		temp = ((eps_hat[:, 1:] - eps_hat[:, :-1] - (eps[:, 1:] - eps[:, :-1])) ** 2).mean()
+		loss = base + 0.2 * temp
 		total_loss += float(loss.item()) * batch_size
 		total += batch_size
 		return loss, total, total_loss
+
+	# def _calc_loss(self, eps_hat, eps, total_loss: float, total: int, batch_size):
+	# 	loss = self.loss_fn(eps_hat, eps)
+	# 	total_loss += float(loss.item()) * batch_size
+	# 	total += batch_size
+	# 	return loss, total, total_loss
 
 	def _save_best(self, epoch, val_loss):
 		if not self.cfg.trainers.diffSynth.checkpoint.enabled:
@@ -217,7 +235,7 @@ class SynthTrainer(BaseTrainer):
 		try:
 			with inference_mode():
 				while start < num_samples:
-					end = min(start + self.cfg.trainers.diffSynth.batch_size, num_samples)
+					end = min(start + 4096, num_samples)
 					bs = end - start
 
 					# Conditional
@@ -248,23 +266,21 @@ class SynthTrainer(BaseTrainer):
 		try:
 			# Try loading reference STD
 			std = load(self.main_dataset.paths['ref_std'])
-			# Vision R
-			self.main_dataset.vision_R = std['vision_R'].astype(float32)
+
 			self.std_mu = std['mu'].astype(float32)
 			self.std_sigma = std['sigma'].astype(float32)
-			self.standardizer = DiffusionStandardizer(vision_R=self.main_dataset.vision_R)
+			self.standardizer = DiffusionStandardizer()
 		except Exception:
 			# Otherwise fit from TRAIN indices only
 			self.log.error('Standardizer not found, generating values')
 			train_idx = array(self.train_dataset.indices, dtype=int64)
-			self.standardizer = DiffusionStandardizer(vision_R=self.main_dataset.vision_R)
+			self.standardizer = DiffusionStandardizer()
 			self.std_mu, self.std_sigma = self.standardizer.fit(self.main_dataset.X, train_idx)
 
 			savez_compressed(
 				self.main_dataset.paths['ref_std'],
 				mu=self.std_mu.astype(float32),
 				sigma=self.std_sigma.astype(float32),
-				vision_R=self.main_dataset.vision_R,
 				D=int32(self.std_mu.shape[0]),
 			)
 

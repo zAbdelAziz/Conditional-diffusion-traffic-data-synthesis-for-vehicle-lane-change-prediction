@@ -1,6 +1,6 @@
 from torch.nn import Module
 
-from torch import Tensor, tensor, zeros, full, arange, linspace, randn, randn_like, unique_consecutive, no_grad, cat, flip, clamp
+from torch import Tensor, tensor, zeros, full, empty, arange, linspace, randn, randn_like, unique_consecutive, no_grad, cat, flip, clamp
 from torch import sqrt, cos, pi, cumprod, float32, long
 from torch import round as torch_round
 
@@ -23,6 +23,14 @@ class GaussianDiffusionModel(Module):
 		self.register_buffer("betas", betas)
 		self.register_buffer("alphas", alphas)
 		self.register_buffer("alpha_bar", alpha_bar)
+
+		# To Optimize the generation process
+		self.register_buffer("sqrt_alpha_bar", sqrt(alpha_bar))
+		self.register_buffer("sqrt_one_minus_alpha_bar", sqrt(1.0 - alpha_bar))
+		self.register_buffer("sqrt_alphas", sqrt(alphas))
+		self.register_buffer("sqrt_betas", sqrt(betas))
+		self.register_buffer("sqrt_recip_alphas", 1.0 / (self.sqrt_alphas + 1e-12))
+		self.register_buffer("beta_over_sqrt_one_minus_alpha_bar", betas / (self.sqrt_one_minus_alpha_bar + 1e-12))
 
 	@staticmethod
 	def _make_betas(T: int, schedule: str):
@@ -52,12 +60,14 @@ class GaussianDiffusionModel(Module):
 	def q_sample(self, x0: Tensor, t: Tensor, noise: Tensor):
 		"""Sample from the forward diffusion q(x_t | x_0) given x0, timestep indices t, and provided noise"""
 		# Gather alpha_bar for each batch element at its timestep and reshape for broadcasting over (C, L)/(C, H, W)/etc
-		a_bar = self.alpha_bar[t].view(-1, 1, 1)
+		s1 = self.sqrt_alpha_bar[t].view(-1, 1, 1)
+		s2 = self.sqrt_one_minus_alpha_bar[t].view(-1, 1, 1)
+
 		# Apply the closed-form forward diffusion: x_t = sqrt(a_bar)*x0 + sqrt(1-a_bar)*noise
-		return sqrt(a_bar) * x0 + sqrt(1.0 - a_bar) * noise
+		return s1 * x0 + s2 * noise
 
 	@no_grad()
-	def p_sample_loop(self, denoiser, shape, y=None, device=None, *, steps: int = None, method: str = "ddim", eta: float = 0.0):
+	def p_sample_loop(self, denoiser, shape, y=None, device=None, *, steps: int = None, method: str = "ddpm", eta: float = 0.0):
 		device = device or self.betas.device
 
 		# Initialize x at time T with standard Gaussian noise: x_T ~ N(0, I)
@@ -70,27 +80,24 @@ class GaussianDiffusionModel(Module):
 		else:
 			ts = self._make_respaced_schedule(int(steps), device=device)
 
+		t_buf = empty((shape[0],), device=device, dtype=long)
+
 		# Loop over reversed timesteps
 		for i in range(ts.numel()):
 			# Current timestep
 			ti = int(ts[i].item())
 			# batch-shaped timestep tensor for the denoiser, all elements equal to ti
-			t = full((shape[0],), ti, device=device, dtype=long)
+			t_buf.fill_(ti)
 
 			# Predict noise eps_hat = eps_theta(x_t, t, y) using the provided denoiser
-			eps_hat = denoiser(x, t, y)
+			eps_hat = denoiser(x, t_buf, y)
 
 			# Fetch alpha_bar(t) as a scalar (single timestep)
 			a_bar_t = self.alpha_bar[ti]
 
-			# Precompute sqrt(alpha_bar_t) for reuse
-			sqrt_a_bar_t = sqrt(a_bar_t)
-			# Precompute sqrt(1 - alpha_bar_t) for reuse
-			sqrt_one_minus_a_bar_t = sqrt(1.0 - a_bar_t)
-
 			# Estimate x0 using the standard DDPM inversion
 			# x0_hat = (x_t - sqrt(1-a_bar_t)*eps_hat) / sqrt(a_bar_t)
-			x0_hat = (x - sqrt_one_minus_a_bar_t * eps_hat) / (sqrt_a_bar_t + 1e-12)
+			x0_hat = (x - self.sqrt_one_minus_alpha_bar[ti] * eps_hat) / (self.sqrt_alpha_bar[ti] + 1e-12)
 
 			# Determine next timestep index in the (possibly respaced) schedule
 			# last iteration maps to final output
@@ -106,10 +113,6 @@ class GaussianDiffusionModel(Module):
 
 			# Fetch alpha_bar at the next timestep
 			a_bar_next = self.alpha_bar[t_next]
-			# Precompute sqrt(alpha_bar_next)
-			sqrt_a_bar_next = sqrt(a_bar_next)
-			# Precompute sqrt(1 - alpha_bar_next)
-			sqrt_one_minus_a_bar_next = sqrt(1.0 - a_bar_next)
 
 			if method == "ddim":
 				# DDIM update:
@@ -135,28 +138,25 @@ class GaussianDiffusionModel(Module):
 				# stochastic DDIM should sample fresh noise z and include sigma*z term
 				if eta > 0.0:
 					z = randn_like(x)
-					x = sqrt_a_bar_next * x0_hat + c * eps_hat + sigma * z
+					x = self.sqrt_alpha_bar[t_next] * x0_hat + c * eps_hat + sigma * z
 				# If deterministic DDIM the noise term is omitted
 				else:
-					x = sqrt_a_bar_next * x0_hat + c * eps_hat
+					x = self.sqrt_alpha_bar[t_next] * x0_hat + c * eps_hat
 
 			elif method == "ddpm":
 				# DDPM-like step but respaced:
 				# use beta_t from original index ti
 				# approx when skipping steps
-				beta_t = self.betas[ti]
-				alpha_t = self.alphas[ti]
 
 				# Compute mean of p(x_{t-1}|x_t) under the eps-parameterization
 				# mu = 1/sqrt(alpha_t) * (x_t - (beta_t / sqrt(1-a_bar_t)) * eps_hat)
-				mu = (1.0 / sqrt(alpha_t)) * (x - (beta_t / (sqrt_one_minus_a_bar_t + 1e-12)) * eps_hat)
+				mu = self.sqrt_recip_alphas[ti] * (x - self.beta_over_sqrt_one_minus_alpha_bar[ti] * eps_hat)
 
 				# Sample noise for the stochastic reverse step
 				z = randn_like(x)
 				# Use sigma = sqrt(beta_t) as a simple variance choice for the noise term
-				sigma = sqrt(beta_t)
 				# Draw x_{t-1} = mu + sigma*z
-				x = mu + sigma * z
+				x = mu + self.sqrt_betas[ti] * z
 			else:
 				raise ValueError("method must be 'ddim' or 'ddpm'")
 

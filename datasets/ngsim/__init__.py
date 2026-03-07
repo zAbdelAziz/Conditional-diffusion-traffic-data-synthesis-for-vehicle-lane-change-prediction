@@ -37,8 +37,6 @@ class NgsimDataset(BaseDataset):
 		# Save
 		self.save()
 
-		self.vision_R = feature_builder.vision_R
-
 	def _clean_raw_csv(self, df: DataFrame):
 		# Select Subsets based on config
 		subsets = getattr(self.cfg.datasets[self.name], "subsets", None)

@@ -1,12 +1,12 @@
 runner:
-  name: UNET[CFG]-BiGRU-NGSIM[14-61]
+  name: UNET[postProc-cwtMSE]-BiGRU-NGSIM[20-61]
   seed: 42
   dataset:
     train: ngsim
     test: ngsim
     analyze: false
     online_synth: false
-    synth_samples: 200010
+    synth_samples: 203000
   train:
     synth: true
     downstream: true
@@ -72,7 +72,7 @@ models:
   UNETDenoiser:
     clsName: UNETDenoiserModel
     hyperparams:
-      data_dim: 14
+      data_dim: 20
       base_channels: 128
       cond_dim: 256
       dropout: 0.1
@@ -84,7 +84,7 @@ models:
   TransformerDenoiser:
     clsName: TransformerDenoiserModel
     hyperparams:
-      data_dim: 14
+      data_dim: 20
       d_model: 256
       n_heads: 8
       n_layers: 6
@@ -112,7 +112,7 @@ models:
 trainers:
   diffSynth:
     clsName: SynthTrainer
-    epochs: 20
+    epochs: 30
     batch_size: 64
     clip_grad: true
     standardize: true
@@ -136,7 +136,7 @@ trainers:
       step_per: epoch
       params:
         T_max: ${trainers.diffSynth.epochs}
-        eta_min: 0.00001
+        eta_min: 0.000005
     checkpoint:
       enabled: true
       metric: "valid/loss"

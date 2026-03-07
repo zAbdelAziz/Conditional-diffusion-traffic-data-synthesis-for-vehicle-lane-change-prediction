@@ -212,18 +212,9 @@ class DownstreamTrainer(BaseTrainer):
 
 	def _build_features(self):
 		"""One-shot derivation cache for downstream"""
-		# Get Vision R
-		vision_R = getattr(self.main_dataset, "vision_R", None)
-		if vision_R is None:
-			try:
-				std = load(self.main_dataset.paths["ref_std"])
-				vision_R = float(std["vision_R"])
-				self.main_dataset.vision_R = vision_R
-			except Exception as e:
-				raise ValueError("vision_R not available cant derive downstream features") from e
-		# Get dt
+		# dt
 		dt = self.cfg.datasets[self.main_dataset.name].preprocessing.dt
-		builder = DownstreamFeatureBuilder(dt=dt, vision_R=self.main_dataset.vision_R)
+		builder = DownstreamFeatureBuilder(dt=dt)
 
 		# Cache derived features for the MAIN dataset
 		Xd_main = builder.build(self.main_dataset.X, batch_size=self.cfg.trainers.downstream.batch_size)
@@ -244,7 +235,7 @@ class DownstreamTrainer(BaseTrainer):
 				# external: must derive once as well
 				if not hasattr(self.test_dataset, "X") or self.test_dataset.X is None:
 					raise RuntimeError("External test_dataset has no .X to derive from.")
-				if int(getattr(self.test_dataset, "D", self.test_dataset.X.shape[-1])) != 14:
+				if int(getattr(self.test_dataset, "D", self.test_dataset.X.shape[-1])) != 20:
 					raise RuntimeError(
 						f"Expected external test_dataset D=20, got D={self.test_dataset.X.shape[-1]}")
 

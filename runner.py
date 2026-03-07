@@ -11,7 +11,7 @@ from trainers.downstream import DownstreamTrainer
 from utils.config import Config
 from utils.logger import Logger
 from utils.seeder import set_global_seed
-
+from utils.post_process import postprocess_synth_20
 
 class Runner:
 	def __init__(self):
@@ -184,7 +184,7 @@ class Runner:
 			else:
 				# Should Not Happen but just for debugging
 				self.log.warning('Standardize enabled but no stored (std, mu, sigma) found so saving standardized synth as-is')
-
+		X = postprocess_synth_20(X, p_threshold=float(getattr(self.cfg.trainers.diffSynth, "p_threshold", 0.5)), smooth_p=bool(getattr(self.cfg.trainers.diffSynth, "smooth_p", False)))
 		# Write to the synthetic cache paths
 		meta.to_csv(self.raw_dataset.paths['syn_meta'], index=False)
 		np.savez_compressed(self.raw_dataset.paths['syn_npz'], X=X, y=y)
