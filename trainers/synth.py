@@ -19,27 +19,30 @@ from utils.standardizer import DiffusionStandardizer
 
 from utils.visuals.models import model_params, plot_model
 
+from numpy import array, clip as np_clip, maximum, int64, float32
+from torch import Tensor, randint, randn_like, long, ones, from_numpy, tensor
+from torch.nn.functional import binary_cross_entropy_with_logits
+from torch.nn.utils import clip_grad_norm_
+
 
 class SynthTrainer(BaseTrainer):
 	def __init__(self, train_dataset, model, diffusion, test_dataset=None, y_conditional: bool = True):
 		super().__init__(name="diffSynth", train_dataset=train_dataset, test_dataset=test_dataset, model=model)
 
-		# Standardize Dataset
 		if self.cfg.trainers.diffSynth.standardize:
 			self._build_standardizer()
 
 		self.epochs = self.cfg.trainers.diffSynth.epochs
-		
 		self.diffusion = diffusion.to(self.device)
 		self.global_step = 0
 		self.visualize_models()
 
 		self.clip_grad = bool(getattr(self.cfg.trainers.diffSynth, "clip_grad", False))
-		# conditional diffusion
 		self.conditional = y_conditional
-		
-		self.loss_fn = mse_loss
-		self.loss_weights = self._init_loss_weights()
+
+		self.loss_fn = None
+
+		self._init_hybrid_loss()
 
 	def start(self):
 		for epoch in range(self.epochs):
@@ -74,15 +77,15 @@ class SynthTrainer(BaseTrainer):
 			
 			# Sample x_t, eps, t
 			x_t, t, eps = self._sample(X)
-			
+
 			# Predict eps_hat
-			eps_hat = self._predict(x_t, t, y)
-			
+			pred = self._predict(x_t, t, y)
+
 			# Zero Grad
 			self.optimizer.zero_grad()
-			
+
 			# Loss
-			loss, total, total_loss = self._calc_loss(eps_hat=eps_hat, eps=eps, total=total, total_loss=total_loss, batch_size=X.size(0))
+			loss, total, total_loss = self._calc_loss(pred=pred, X=X, eps=eps, total=total, total_loss=total_loss, batch_size=X.size(0))
 			loss.backward()
 			
 			# Clip Gradient
@@ -107,21 +110,50 @@ class SynthTrainer(BaseTrainer):
 		total_loss = 0.0
 		total = 0
 
-		for X, y in tqdm(loader, desc="eval-synth"):
+		for X, y in tqdm(loader, desc="Evaluation Synth"):
 			X, y = X.to(self.device), y.to(self.device)
 
 			# Sample x_t, eps, t
 			x_t, t, eps = self._sample(X)
+			pred = self._predict(x_t, t, y)
 
-			# Predict eps_hat
-			eps_hat = self._predict(x_t, t, y)
-			
-			# Loss
-			loss, total, total_loss = self._calc_loss(eps_hat=eps_hat, eps=eps, total=total, total_loss=total_loss, batch_size=X.size(0))
+			loss, total, total_loss = self._calc_loss(pred=pred, X=X, eps=eps, total=total, total_loss=total_loss, batch_size=X.size(0))
 
 		avg_loss = total_loss / max(total, 1)
 		return avg_loss, {"loss": avg_loss}
-		
+
+	def _init_hybrid_loss(self):
+		# more weight on ego
+		# mild extra weight on same-lane front/rear
+		self.ego_loss_weight = 2.0
+		self.slot_cont_weights = tensor([1.0, 1.0, 1.0, 1.0, 1.25, 1.25], device=self.device).view(1, 1, 6, 1)
+
+		# downweight absent dx/dy but I didnt zero them out completely
+		self.absent_cont_scale = 0.20
+
+		# estimate mask imbalance from the train split
+		train_idx = array(self.train_dataset.indices, dtype=int64)
+		# [N,T,20]
+		Xtr = self.main_dataset.X[train_idx]
+		# [N,T,6]
+		p = Xtr[:, :, 2:20].reshape(Xtr.shape[0], Xtr.shape[1], 6, 3)[..., 2]
+
+		pos = p.sum(axis=(0, 1)).astype(float32)
+		total_per_slot = float32(p.shape[0] * p.shape[1])
+		neg = total_per_slot - pos
+
+		pos_weight = neg / maximum(pos, 1.0)
+		pos_weight = np_clip(pos_weight, 1.0, 8.0).astype(float32)
+
+		self.mask_pos_weight = from_numpy(pos_weight).to(self.device)
+
+	def _split_x20_tensor(self, X: Tensor):
+		nbr = X[:, :, 2:20].reshape(X.size(0), X.size(1), 6, 3)
+		ego = X[:, :, 0:2]
+		slot_xy = nbr[..., 0:2]
+		slot_p = nbr[..., 2]
+		return ego, slot_xy, slot_p
+
 	def _sample(self, X):
 		# [B,T,D]
 		t = randint(0, self.diffusion.T, (X.size(0),), device=self.device, dtype=long)
@@ -133,22 +165,49 @@ class SynthTrainer(BaseTrainer):
 	def _predict(self, x_t, t, y):
 		if self.conditional:
 			return self.model(x_t, t, y)
-		else:
-			return self.model(x_t, t)
+		return self.model(x_t, t, None)
 
-	def _init_loss_weights(self):
-		self.loss_weights = ones((self.main_dataset.D), device=self.device)
-		ego = 2.0
-		fr = 1.3
-		p = 0.9
-		self.loss_weights = Tensor([ego, ego, 1.0, 1.0, p, 1.0, 1.0, p, 1.0, 1.0, p, 1.0, 1.0, p, fr, fr, p, fr, fr, p]).to(self.device)
-		return self.loss_weights
+	def _calc_loss(self, pred, X, eps, total_loss: float, total: int, batch_size: int):
+		# backward compatibility: plain tensor model
+		if isinstance(pred, Tensor):
+			loss = ((pred - eps) ** 2).mean()
+			total_loss += float(loss.item()) * batch_size
+			total += batch_size
+			return loss, total, total_loss
 
-	def _calc_loss(self, eps_hat, eps, total_loss: float, total: int, batch_size):
-		w = self.loss_weights.view(1, 1, -1)
-		base = ((eps_hat - eps) ** 2 * w).mean()
-		temp = ((eps_hat[:, 1:] - eps_hat[:, :-1] - (eps[:, 1:] - eps[:, :-1])) ** 2).mean()
-		loss = base + 0.2 * temp
+		# split targets
+		eps_ego_true, eps_slots_true, _ = self._split_x20_tensor(eps)
+		_, _, p_true = self._split_x20_tensor(X)
+		p_true = p_true.clamp(0.0, 1.0)
+
+		# [B,T,2]
+		eps_ego_hat = pred["eps_ego"]
+		# [B,T,6,2]
+		eps_slots_hat = pred["eps_slots"]
+		# [B,T,6]
+		p_logits = pred["p_logits"]
+
+		# continuous epsilon losses
+		# [B,T,6,1]
+		present = p_true.unsqueeze(-1)
+		cont_weight = self.slot_cont_weights * (self.absent_cont_scale + (1.0 - self.absent_cont_scale) * present)
+
+		loss_ego = ((eps_ego_hat - eps_ego_true) ** 2).mean()
+		loss_slots = (((eps_slots_hat - eps_slots_true) ** 2) * cont_weight).mean()
+
+		# mask loss on clean p
+		loss_mask = binary_cross_entropy_with_logits(p_logits, p_true, pos_weight=self.mask_pos_weight.view(1, 1, 6))
+
+		# temporal consistency
+		temp_slots = ((eps_slots_hat[:, 1:] - eps_slots_hat[:, :-1]) - (eps_slots_true[:, 1:] - eps_slots_true[:, :-1])) ** 2
+		temp_slots = (temp_slots * self.slot_cont_weights).mean()
+
+		p_prob = p_logits.sigmoid()
+		temp_mask = ((p_prob[:, 1:] - p_prob[:, :-1]) - (p_true[:, 1:] - p_true[:, :-1])) ** 2
+		temp_mask = temp_mask.mean()
+
+		loss = (self.ego_loss_weight * loss_ego + 1.0 * loss_slots + 0.50 * loss_mask + 0.10 * temp_slots + 0.05 * temp_mask)
+
 		total_loss += float(loss.item()) * batch_size
 		total += batch_size
 		return loss, total, total_loss

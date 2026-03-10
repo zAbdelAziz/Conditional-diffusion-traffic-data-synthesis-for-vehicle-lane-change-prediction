@@ -91,21 +91,43 @@ class DiffusionStandardizer:
 		Y[:, :, 2:20] = Ynbr.reshape(X.shape[0], X.shape[1], 18)
 		return Y.astype(float32, copy=False)
 
-	def inverse_transform(self, X: ndarray, mu: ndarray, sigma: ndarray):
+	def inverse_transform(self, X: ndarray, mu: ndarray, sigma: ndarray, project_absent: bool = False):
 		assert X.ndim == 3 and X.shape[-1] == 20, f"expected [N,T,20], got {X.shape}"
 		X = X.astype(float32, copy=False)
 		mu = mu.astype(float32, copy=False)
 		sigma = sigma.astype(float32, copy=False)
 
-		# de-standardize
 		Y = X * sigma[None, None, :] + mu[None, None, :]
 
 		Ynbr, dx, dy, p = self._split_neighbor_block(Y)
 
-		absent = p <= self.p_present_threshold
-		dx[absent] = 0.0
-		dy[absent] = 0.0
+		# always keep p in [0,1]
 		p[:] = p.clip(0.0, 1.0)
+
+		# only project absence here if explicitly requested
+		if project_absent:
+			absent = p <= self.p_present_threshold
+			dx[absent] = 0.0
+			dy[absent] = 0.0
 
 		Y[:, :, 2:20] = Ynbr.reshape(Y.shape[0], Y.shape[1], 18)
 		return Y.astype(float32, copy=False)
+
+	# def inverse_transform(self, X: ndarray, mu: ndarray, sigma: ndarray):
+	# 	assert X.ndim == 3 and X.shape[-1] == 20, f"expected [N,T,20], got {X.shape}"
+	# 	X = X.astype(float32, copy=False)
+	# 	mu = mu.astype(float32, copy=False)
+	# 	sigma = sigma.astype(float32, copy=False)
+	#
+	# 	# de-standardize
+	# 	Y = X * sigma[None, None, :] + mu[None, None, :]
+	#
+	# 	Ynbr, dx, dy, p = self._split_neighbor_block(Y)
+	#
+	# 	absent = p <= self.p_present_threshold
+	# 	dx[absent] = 0.0
+	# 	dy[absent] = 0.0
+	# 	p[:] = p.clip(0.0, 1.0)
+	#
+	# 	Y[:, :, 2:20] = Ynbr.reshape(Y.shape[0], Y.shape[1], 18)
+	# 	return Y.astype(float32, copy=False)

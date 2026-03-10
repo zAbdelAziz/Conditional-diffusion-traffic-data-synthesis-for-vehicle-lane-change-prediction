@@ -1,19 +1,19 @@
 runner:
-  name: UNET[postProc-cwtMSE]-BiGRU-NGSIM[20-61]
+  name: HybridUNET[decay]-BiGRU-NGSIM[20-61]
   seed: 42
   dataset:
     train: ngsim
     test: ngsim
     analyze: false
     online_synth: false
-    synth_samples: 203000
+    synth_samples: 200200
   train:
     synth: true
     downstream: true
     synth_generate_only: false
   model:
-    diffusion: GaussianDiffusion
-    synth: UNETDenoiser
+    diffusion: MaskedGaussianDiffusion
+    synth: HybridUNETDenoiser
     downstream: BiGRUClassifier
   dirs:
     root_datasets: datasets-files
@@ -23,6 +23,8 @@ runner:
     synth_datasets: ${runner.dirs.root_datasets}/synth
     downstream_model: ${runner.dirs.root_models}/downstream
     synth_model: ${runner.dirs.root_models}/synth
+  sampling:
+    steps: 50
 
 datasets:
   ngsim:
@@ -67,8 +69,14 @@ models:
   GaussianDiffusion:
     clsName: GaussianDiffusionModel
     hyperparams:
-      T: 175
+      T: ${runner.sampling.steps}
       beta_schedule: cosine
+  MaskedGaussianDiffusion:
+    clsName: MaskedGaussianDiffusionModel
+    hyperparams:
+      T: ${runner.sampling.steps}
+      beta_schedule: cosine
+      cfg_scale: 1.5
   UNETDenoiser:
     clsName: UNETDenoiserModel
     hyperparams:
@@ -80,6 +88,20 @@ models:
       use_attn_mid: true
       use_attn_low: true
       num_classes: 3
+      cfg_drop_prob: 0.15
+  HybridUNETDenoiser:
+    clsName: HybridUNetDenoiserModel
+    hyperparams:
+      token_dim: 32
+      base_channels: 128
+      cond_dim: 256
+      n_entity_blocks: 2
+      entity_heads: 4
+      attn_heads: 8
+      use_attn_mid: true
+      use_attn_low: true
+      num_classes: 3
+      dropout: 0.1
       cfg_drop_prob: 0.15
   TransformerDenoiser:
     clsName: TransformerDenoiserModel
@@ -130,7 +152,7 @@ trainers:
       clsName: AdamW
       params:
         lr: 0.0007
-        weight_decay: 0.01
+        weight_decay: 0.005
     scheduler:
       clsName: CosineAnnealingLR
       step_per: epoch
@@ -141,10 +163,10 @@ trainers:
       enabled: true
       metric: "valid/loss"
       mode: "min"
-      autoload_for_sampling: false
+      autoload_for_sampling: true
       autoload_tag: "best"
     sampling:
-      steps: ${models.${runner.model.diffusion}.hyperparams.T}
+      steps: ${runner.sampling.steps}
       method: ddpm
       eta: 0.0
   downstream:
@@ -165,7 +187,7 @@ trainers:
       clsName: AdamW
       params:
         lr: 0.0007
-        weight_decay: 5e-3
+        weight_decay: 0.001
     scheduler:
       clsName: CosineAnnealingLR
       step_per: epoch

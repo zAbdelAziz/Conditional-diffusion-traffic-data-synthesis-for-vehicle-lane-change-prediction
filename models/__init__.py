@@ -1,6 +1,8 @@
 # Diffusion Models
 from models.synth.gaussian_diffusion import GaussianDiffusionModel
+from models.synth.masked_gaussian_diffusion import MaskedGaussianDiffusionModel
 from models.synth.unet_denoiser import UNETDenoiserModel
+from models.synth.unet_hybrid_denoiser import HybridUNetDenoiserModel
 from models.synth.transformer_denoiser import TransformerDenoiserModel
 
 # Downstream Models
