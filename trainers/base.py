@@ -148,41 +148,83 @@ class BaseTrainer:
 		return optimizer_fn(self.model.parameters(), **optim_params)
 
 	def _build_scheduler(self):
-		# OPTIONAL scheduler config
+		# scheduler config
 		tcfg = self.cfg.trainers[self.name]
 		scfg = getattr(tcfg, "scheduler", None)
+
 		if scfg is None:
-			self.log.info("No scheduler configured.")
+			self.log.info(f"No scheduler configured for {self.name}")
 			return None
 
 		# allow disabling via enabled flag
 		if hasattr(scfg, "enabled") and not bool(scfg.enabled):
-			self.log.info("Scheduler disabled via config.")
+			self.log.info(f"Scheduler disabled via config for {self.name}.")
 			return None
 
-		sched_name = getattr(scfg, "clsName", None)
-		if sched_name is None:
-			self.log.info("Scheduler config present but no clsName; skipping.")
+		sched_name = str(getattr(scfg, "clsName", "") or "").strip()
+		if not sched_name:
+			self.log.info("Scheduler config present but no clsName skipping.")
 			return None
 
+		step_per = str(getattr(scfg, "step_per", "epoch")).lower()
 		params = dict(getattr(scfg, "params", {}) or {})
 
-		# Resolve common cosine defaults
+		train_steps_per_epoch = max(1, len(self.train_loader))
+		total_epochs = int(tcfg.epochs)
+		total_steps = total_epochs * train_steps_per_epoch
+
+		# Warmup + Hold + Cosine decay
+		if sched_name == "WarmupHoldCosineLR":
+			if step_per != "epoch":
+				raise ValueError("WarmupHoldCosineLR currently expects step_per='epoch'")
+
+			warmup_epochs = int(params.get("warmup_epochs", 5))
+			hold_epochs = int(params.get("hold_epochs", 15))
+			eta_min = float(params.get("eta_min", 1e-5))
+			start_factor = float(params.get("start_factor", 0.2))
+
+			cosine_epochs = total_epochs - warmup_epochs - hold_epochs
+			if cosine_epochs <= 0:
+				raise ValueError(f"Invalid scheduler layout: epochs={total_epochs}, warmup_epochs={warmup_epochs}, hold_epochs={hold_epochs}")
+
+			warmup = lr_scheduler.LinearLR(self.optimizer, start_factor=start_factor, end_factor=1.0, total_iters=warmup_epochs)
+			hold = lr_scheduler.ConstantLR(self.optimizer, factor=1.0, total_iters=hold_epochs)
+			cosine = lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=cosine_epochs, eta_min=eta_min)
+
+			sch = lr_scheduler.SequentialLR(self.optimizer, schedulers=[warmup, hold, cosine], milestones=[warmup_epochs, warmup_epochs + hold_epochs])
+
+			self.log.info(f"Built scheduler: WarmupHoldCosineLR " f"(warmup={warmup_epochs}, hold={hold_epochs}, cosine={cosine_epochs}, eta_min={eta_min})")
+			return sch
+
+		# OneCycleLR
+		if sched_name == "OneCycleLR":
+			if step_per != "batch":
+				raise ValueError("OneCycleLR requires step_per='batch'")
+
+			max_lr = float(params["max_lr"])
+			pct_start = float(params.get("pct_start", 0.15))
+			anneal_strategy = str(params.get("anneal_strategy", "cosine"))
+			div_factor = float(params.get("div_factor", 10.0))
+			final_div_factor = float(params.get("final_div_factor", 200.0))
+
+			sch = lr_scheduler.OneCycleLR(self.optimizer, max_lr=max_lr, epochs=total_epochs, steps_per_epoch=train_steps_per_epoch,
+										  pct_start=pct_start, anneal_strategy=anneal_strategy,
+										  div_factor=div_factor, final_div_factor=final_div_factor)
+
+			self.log.info(f"Built scheduler: OneCycleLR (max_lr={max_lr}, epochs={total_epochs}, steps_per_epoch={train_steps_per_epoch})")
+			return sch
+
+		# Fallback to standard torch schedulers
+
 		if sched_name == "CosineAnnealingLR":
-			# If user didn't set T_max, default to epochs when stepping per-epoch
-			step_per = str(getattr(scfg, "step_per", "epoch")).lower()
 			if "T_max" not in params:
-				if step_per == "epoch":
-					params["T_max"] = int(self.cfg.trainers[self.name].epochs)
-				else:
-					# per-step cosine: set later once loaders exist
-					# Here we set a placeholder; DownstreamTrainer can overwrite.
-					params["T_max"] = int(self.cfg.trainers[self.name].epochs)
+				params["T_max"] = total_epochs if step_per == "epoch" else total_steps
+			params.setdefault("eta_min", 1e-5)
 
 		try:
 			sched_cls = getattr(lr_scheduler, sched_name)
 		except AttributeError:
-			raise ValueError(f"Unknown scheduler: {sched_name}. Must exist in torch.optim.lr_scheduler")
+			raise ValueError(f"Unknown scheduler: {sched_name}")
 
 		sch = sched_cls(self.optimizer, **params)
 		self.log.info(f"Built scheduler: {sched_name} params={params}")

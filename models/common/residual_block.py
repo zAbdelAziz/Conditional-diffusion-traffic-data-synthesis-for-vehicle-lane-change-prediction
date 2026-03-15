@@ -1,5 +1,5 @@
 from torch import Tensor
-from torch.nn import Module, Conv1d, GroupNorm, Dropout
+from torch.nn import Module, Conv1d, GroupNorm, Dropout, Linear
 from torch.nn.functional import silu
 
 from models.common import FiLM
@@ -22,6 +22,7 @@ class ResBlock1D(Module):
 		self.drop = Dropout(dropout)
 		# Conv1d [BCT]
 		self.conv2 = Conv1d(channels, channels, kernel_size=3, padding=1)
+		self.gate_proj = Linear(cond_dim, channels)
 
 	def forward(self, x: Tensor, cond: Tensor):
 		# x: [B,C,T], cond: [B,cond_dim]
@@ -38,5 +39,7 @@ class ResBlock1D(Module):
 		n2 = silu(n2)
 		n2 = self.drop(n2)
 		h = self.conv2(n2)
+		# Learnable Gate
+		gate = self.gate_proj(cond).sigmoid()[:, :, None]
 		# add Residual [BCT] + [BCT]
-		return x + h
+		return x + gate * h

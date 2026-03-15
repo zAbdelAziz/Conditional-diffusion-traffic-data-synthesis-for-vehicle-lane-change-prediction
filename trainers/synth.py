@@ -5,12 +5,13 @@ from pathlib import Path
 import wandb
 
 from pandas import DataFrame
-from numpy import array, random, full, arange, concatenate, empty, zeros, load, savez_compressed, int32, int64, float32
+from numpy import array, random, full, arange, concatenate, empty, zeros, flatnonzero, unique
+from numpy import load, savez_compressed, maximum, clip as np_clip, int32,  int64, float32
 
 from torch.utils.data import Subset
-from torch.nn.functional import mse_loss
+from torch.nn.functional import binary_cross_entropy_with_logits
 from torch.nn.utils import clip_grad_norm_
-from torch import Tensor, ones, compile, randint, randn_like, randn, long, no_grad, inference_mode, from_numpy, cuda
+from torch import Tensor, tensor, compile, randint, randn_like, randn, long, no_grad, inference_mode, from_numpy, cuda
 
 from tqdm import tqdm
 
@@ -19,15 +20,14 @@ from utils.standardizer import DiffusionStandardizer
 
 from utils.visuals.models import model_params, plot_model
 
-from numpy import array, clip as np_clip, maximum, int64, float32
-from torch import Tensor, randint, randn_like, long, ones, from_numpy, tensor
-from torch.nn.functional import binary_cross_entropy_with_logits
-from torch.nn.utils import clip_grad_norm_
-
 
 class SynthTrainer(BaseTrainer):
 	def __init__(self, train_dataset, model, diffusion, test_dataset=None, y_conditional: bool = True):
 		super().__init__(name="diffSynth", train_dataset=train_dataset, test_dataset=test_dataset, model=model)
+
+		if self.cfg.trainers.diffSynth.oversample.enabled:
+			self._oversample_train_fr_nonzero()
+			self._build_loaders()
 
 		if self.cfg.trainers.diffSynth.standardize:
 			self._build_standardizer()
@@ -72,6 +72,10 @@ class SynthTrainer(BaseTrainer):
 		total_loss = 0.0
 		total = 0
 
+		step_per = "epoch"
+		if self.scheduler is not None:
+			step_per = str(getattr(self.cfg.trainers.diffSynth.scheduler, "step_per", "epoch")).lower()
+
 		for X, y in tqdm(self.train_loader, desc="Train Synth"):
 			X, y = X.to(self.device), y.to(self.device)
 			
@@ -95,12 +99,13 @@ class SynthTrainer(BaseTrainer):
 			# Optimizer Step
 			self.optimizer.step()
 
+			if self.scheduler is not None and step_per == "batch":
+				self.scheduler.step()
+
 			self.global_step += 1
 		# Scheduler Step per-epoch
-		if self.scheduler is not None:
-			step_per = str(getattr(self.cfg.trainers.diffSynth.scheduler, "step_per", "epoch")).lower()
-			if step_per == "epoch":
-				self.scheduler.step()
+		if self.scheduler is not None and step_per == "epoch":
+			self.scheduler.step()
 		avg_loss = total_loss / max(total, 1)
 		return avg_loss, {"loss": avg_loss}
 
@@ -332,7 +337,13 @@ class SynthTrainer(BaseTrainer):
 		except Exception:
 			# Otherwise fit from TRAIN indices only
 			self.log.error('Standardizer not found, generating values')
-			train_idx = array(self.train_dataset.indices, dtype=int64)
+
+			train_idx = getattr(self, "_train_indices_unique_for_std", None)
+			if train_idx is None:
+				train_idx = array(self.train_dataset.indices, dtype=int64)
+			else:
+				train_idx = array(train_idx, dtype=int64)
+
 			self.standardizer = DiffusionStandardizer()
 			self.std_mu, self.std_sigma = self.standardizer.fit(self.main_dataset.X, train_idx)
 
@@ -361,6 +372,85 @@ class SynthTrainer(BaseTrainer):
 			# Non-subset dataset: standardize normally
 			if hasattr(self.test_dataset, "X"):
 				self.test_dataset.X = self.standardizer.transform(self.test_dataset.X, self.std_mu, self.std_sigma)
+
+	def _oversample_train_fr_nonzero(self):
+		"""
+		Oversample ONLY the train subset based on same-lane front/rear presence
+			Positive window: any timestep has F_p > 0.5 or R_p > 0.5
+			Negative window: all timesteps have F_p <= 0.5 and R_p <= 0.5
+		This modifies only self.train_dataset.indices
+		Validation/test subsets remain untouched
+		"""
+		if not isinstance(self.train_dataset, Subset):
+			raise RuntimeError("Expected self.train_dataset to be a torch.utils.data.Subset")
+
+		cfg = self.cfg.trainers.diffSynth
+		target_ratio = self.cfg.trainers.diffSynth.oversample.target_ratio
+		p_threshold = self.cfg.trainers.diffSynth.oversample.p
+
+		if not (0.0 < target_ratio < 1.0):
+			raise ValueError(f"oversample_fr_nonzero_target_ratio must be in (0,1), got {target_ratio}")
+
+		rng = random.default_rng(self.cfg.runner.seed)
+
+		# original train subset indices into main_dataset
+		train_idx = array(self.train_dataset.indices, dtype=int64)
+
+		# read windows from main dataset
+		# [N,T,20]
+		Xtr = self.main_dataset.X[train_idx]
+
+		# F_p = dim 16, R_p = dim 19 in the 20-dim representation
+		f_p = Xtr[:, :, 16]
+		r_p = Xtr[:, :, 19]
+
+		pos_mask = (f_p > p_threshold).any(axis=1) | (r_p > p_threshold).any(axis=1)
+		neg_mask = ~pos_mask
+
+		idx_pos_local = flatnonzero(pos_mask)
+		idx_neg_local = flatnonzero(neg_mask)
+
+		n_pos = len(idx_pos_local)
+		n_neg = len(idx_neg_local)
+
+		if n_pos == 0 or n_neg == 0:
+			self.log.warning(f"[diffSynth] skipping FR oversampling: n_pos={n_pos}, n_neg={n_neg}")
+			self._train_indices_unique_for_std = train_idx
+			return
+
+		self.log.info(f"[diffSynth] before FR oversampling: train_pos={n_pos} train_neg={n_neg} total={len(train_idx)}")
+
+		# Keep negatives as-is, oversample positives to reach target positive fraction
+		# target_pos / (target_pos + n_neg) ~= target_ratio
+		target_pos = int(round((target_ratio / (1.0 - target_ratio)) * n_neg))
+
+		if target_pos <= n_pos:
+			sel_pos_local = rng.choice(idx_pos_local, size=target_pos, replace=False)
+		else:
+			extra_local = rng.choice(idx_pos_local, size=(target_pos - n_pos), replace=True)
+			sel_pos_local = concatenate([idx_pos_local, extra_local], axis=0)
+
+		sel_local = concatenate([idx_neg_local, sel_pos_local], axis=0)
+		rng.shuffle(sel_local)
+
+		# map local train-subset positions back to main_dataset indices
+		new_train_idx = train_idx[sel_local]
+
+		# overwrite only the TRAIN subset
+		self.train_dataset = Subset(self.main_dataset, new_train_idx.tolist())
+
+		# optionally remember unique train ids for standardizer fit
+		self._train_indices_unique_for_std = unique(new_train_idx)
+
+		# logging
+		Xnew = self.main_dataset.X[new_train_idx]
+		f_p_new = Xnew[:, :, 16]
+		r_p_new = Xnew[:, :, 19]
+		pos_new = int(((f_p_new > p_threshold).any(axis=1) | (r_p_new > p_threshold).any(axis=1)).sum())
+		neg_new = int(len(new_train_idx) - pos_new)
+
+		self.log.info(f"[diffSynth] after FR oversampling: train_pos={pos_new} train_neg={neg_new} total={len(new_train_idx)}"
+					  f"(target_ratio={target_ratio:.3f}, unique_for_std={len(self._train_indices_unique_for_std)})")
 
 	def visualize_models(self, *, tag: str = "synth", seq_len: int = 128, conditional: bool = True):
 

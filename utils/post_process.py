@@ -1,4 +1,4 @@
-from numpy import ndarray, float32, zeros, where, nan_to_num
+from numpy import array, ndarray, asarray, float32, zeros, where, nan_to_num
 
 
 def postprocess_synth_20(
@@ -7,8 +7,8 @@ def postprocess_synth_20(
 	p_threshold: float = 0.5,
 	smooth_p: bool = False,
 	hysteresis: bool = True,
-	p_on: float = 0.55,
-	p_off: float = 0.45,
+	p_on: list = (0.55, 0.55, 0.55, 0.55, 0.70, 0.70),
+	p_off: list = (0.45, 0.45, 0.45, 0.45, 0.60, 0.60),
 	same_lane_dx_max: float = 79.497,
 	adjacent_lane_dx_max: float = 93.747,
 	dy_abs_max: float = 748.17,
@@ -66,7 +66,12 @@ def postprocess_synth_20(
 
 	# presence decision
 	if hysteresis and X.shape[1] >= 2:
-		if not (0.0 <= p_off <= p_on <= 1.0):
+		p_on = asarray(p_on, dtype=float32).reshape(1, 1, 6)
+		p_off = asarray(p_off, dtype=float32).reshape(1, 1, 6)
+		if p_on.shape != (1, 1, 6) or p_off.shape != (1, 1, 6):
+			raise ValueError("p_on and p_off must be scalars or length-6 sequences")
+
+		if ((p_off < 0.0).any() or (p_on > 1.0).any() or (p_off > p_on).any()):
 			raise ValueError(f"expected 0 <= p_off <= p_on <= 1, got p_off={p_off}, p_on={p_on}")
 
 		present = zeros(p.shape, dtype=bool)
@@ -78,9 +83,9 @@ def postprocess_synth_20(
 		# hysteresis over time: high prob turns on, low prob turns off
 		# ambiguous region keeps previous state
 		for t in range(1, X.shape[1]):
-			turn_on = p[:, t, :] >= p_on
-			turn_off = p[:, t, :] <= p_off
-			state = where(turn_on, True, where(turn_off, False, state))
+			turn_on = p[:, t:t + 1, :] >= p_on
+			turn_off = p[:, t:t + 1, :] <= p_off
+			state = where(turn_on[:, 0, :], True, where(turn_off[:, 0, :], False, state))
 			present[:, t, :] = state
 	else:
 		present = p > p_threshold
