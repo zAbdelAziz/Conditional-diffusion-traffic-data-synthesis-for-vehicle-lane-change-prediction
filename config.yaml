@@ -1,19 +1,19 @@
 runner:
-  name: HybridUNET[Main-Ext]-BiGRU-NGSIM[20-61]
+  name: Transformer[Vanilla]-BiGRU-NGSIM[20-61]
   seed: 42
   dataset:
     train: ngsim
     test: ngsim
     analyze: false
     online_synth: false
-    synth_samples: 301500
+    synth_samples: 201600
   train:
-    synth: false
+    synth: true
     downstream: true
     synth_generate_only: false
   model:
-    diffusion: MaskedGaussianDiffusion
-    synth: HybridUNETDenoiser
+    diffusion: GaussianDiffusion
+    synth: TransformerDenoiser
     downstream: BiGRUClassifier
   dirs:
     root_datasets: datasets-files
@@ -110,9 +110,9 @@ models:
       d_model: 256
       n_heads: 8
       n_layers: 6
-      dropout: 0.15
+      dropout: 0.1
       num_classes: 3
-      cfg_drop_prob: 0.05
+      cfg_drop_prob: 0.15
 
   BiGRUClassifier:
     clsName: BiGRUClassifierModel
@@ -125,7 +125,14 @@ models:
   TransformerBiGRUClassifier:
     clsName: TransformerBiGRUClassifierModel
     hyperparams:
-      name: test
+      input_dim: 61
+      d_model: 128
+      n_heads: 8
+      n_tf_layers: 2
+      dropout: 0.1
+      n_bigru_layers: 1
+      num_classes: 3
+      positional: true
   xLSTMClassifier:
     clsName: xLSTMClassifierModel
     hyperparams:
@@ -134,7 +141,7 @@ models:
 trainers:
   diffSynth:
     clsName: SynthTrainer
-    epochs: 150
+    epochs: 30
     batch_size: 64
     clip_grad: true
     standardize: true
