@@ -6,10 +6,10 @@ from torch.nn import Module, ModuleList, Linear, Conv1d, Embedding, GroupNorm, L
 from torch.nn.functional import pad, silu
 
 from models.common import SinusoidalTimeEmbedding, CondMLP, Upsample1D, Downsample1D, SelfAttention1D, ResBlock1D
-from models.synth.unet_hybrid_denoiser.entity_attn import EntityAttentionBlock
+from models.synth.unet_factorized_denoiser.entity_attn import EntityAttentionBlock
 
 
-class HybridUNetDenoiserModel(Module):
+class FactorizedUNetDenoiserModel(Module):
 	def __init__(self, token_dim: int = 32, base_channels: int = 128, cond_dim: int = 256, entity_heads: int = 4, attn_heads: int = 8,
 				 n_entity_blocks: int = 2, use_attn_mid: bool = True, use_attn_low: bool = True, num_classes: int = 3,
 				 dropout: float = 0.1, cfg_drop_prob: float = 0.15):

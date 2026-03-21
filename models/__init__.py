@@ -1,9 +1,12 @@
 # Diffusion Models
 from models.synth.gaussian_diffusion import GaussianDiffusionModel
 from models.synth.masked_gaussian_diffusion import MaskedGaussianDiffusionModel
+from models.synth.hybrid_diffusion import HybridDiffusionModel
+
 from models.synth.unet_denoiser import UNETDenoiserModel
-from models.synth.unet_hybrid_denoiser import HybridUNetDenoiserModel
+from models.synth.unet_factorized_denoiser import FactorizedUNetDenoiserModel
 from models.synth.transformer_denoiser import TransformerDenoiserModel
+from models.synth.transformer_factorized_denoiser import FactorizedTransformerDenoiserModel
 
 # Downstream Models
 from models.downstream.bigru_classifier import BiGRUClassifierModel

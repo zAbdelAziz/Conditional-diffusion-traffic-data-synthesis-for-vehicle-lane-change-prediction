@@ -1,19 +1,19 @@
 runner:
-  name: Transformer[Vanilla]-BiGRU-NGSIM[20-61]
+  name: HybridUNET[Ext]-BiGRU-NGSIM[20-61]
   seed: 42
   dataset:
     train: ngsim
     test: ngsim
     analyze: false
     online_synth: false
-    synth_samples: 201600
+    synth_samples: 500200
   train:
     synth: true
     downstream: true
     synth_generate_only: false
   model:
-    diffusion: GaussianDiffusion
-    synth: TransformerDenoiser
+    diffusion: MaskedGaussianDiffusion
+    synth: FactorizedUNETDenoiser
     downstream: BiGRUClassifier
   dirs:
     root_datasets: datasets-files
@@ -77,6 +77,15 @@ models:
       T: ${runner.sampling.steps}
       beta_schedule: cosine
       cfg_scale: 1.5
+  HybridDiffusion:
+    clsName: HybridDiffusionModel
+    hyperparams:
+      T: ${runner.sampling.steps}
+      beta_schedule: cosine
+      gamma_schedule: cosine
+      cfg_scale: 0.0
+      cfg_p_sample: false
+      mask_unknown_value: 0.5
   UNETDenoiser:
     clsName: UNETDenoiserModel
     hyperparams:
@@ -89,8 +98,8 @@ models:
       use_attn_low: true
       num_classes: 3
       cfg_drop_prob: 0.15
-  HybridUNETDenoiser:
-    clsName: HybridUNetDenoiserModel
+  FactorizedUNETDenoiser:
+    clsName: FactorizedUNetDenoiserModel
     hyperparams:
       token_dim: 32
       base_channels: 128
@@ -108,6 +117,15 @@ models:
     hyperparams:
       data_dim: 20
       d_model: 256
+      n_heads: 8
+      n_layers: 6
+      dropout: 0.1
+      num_classes: 3
+      cfg_drop_prob: 0.15
+  FactorizedTransformerDenoiser:
+    clsName: FactorizedTransformerDenoiserModel
+    hyperparams:
+      token_dim: 32
       n_heads: 8
       n_layers: 6
       dropout: 0.1
@@ -141,7 +159,7 @@ models:
 trainers:
   diffSynth:
     clsName: SynthTrainer
-    epochs: 30
+    epochs: 500
     batch_size: 64
     clip_grad: true
     standardize: true
@@ -207,7 +225,7 @@ trainers:
         eta_min: 0.00005
     checkpoint:
       enabled: true
-      metric: "valid/acc"
+      metric: "valid/macro_f1"
       mode: "max"
       every_n_epochs: 1
 

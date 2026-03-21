@@ -5,10 +5,11 @@ from torch import no_grad
 
 
 class MaskedGaussianDiffusionModel(Module):
-	def __init__(self, T: int, beta_schedule: str = "cosine", cfg_scale: float = 0.0):
+	def __init__(self, T: int, beta_schedule: str = "cosine", cfg_scale: float = 0.0, cfg_p_sample: bool = False):
 		super().__init__()
 		self.T = T
 		self.cfg_scale = cfg_scale
+		self.cfg_p_sample = cfg_p_sample
 
 		betas = self._make_betas(T, beta_schedule)
 		alphas = 1.0 - betas
@@ -90,7 +91,7 @@ class MaskedGaussianDiffusionModel(Module):
 		out_cond = denoiser(x_t, t, y)
 		eps_cond = self._denoiser_out_to_eps(out_cond, x_t, t, gate_continuous_with_mask=gate_continuous_with_mask)
 
-		if (self.cfg_scale <= 0.0) or (y is None):
+		if (self.cfg_scale <= 0.0) or (y is None) or not self.cfg_p_sample:
 			return eps_cond
 
 		out_uncond = denoiser(x_t, t, None)

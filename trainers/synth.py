@@ -131,7 +131,7 @@ class SynthTrainer(BaseTrainer):
 		# more weight on ego
 		# mild extra weight on same-lane front/rear
 		self.ego_loss_weight = 2.0
-		self.slot_cont_weights = tensor([1.0, 1.0, 1.0, 1.0, 1.25, 1.25], device=self.device).view(1, 1, 6, 1)
+		self.slot_weights = tensor([1.0, 1.0, 1.0, 1.0, 1.25, 1.25], device=self.device).view(1, 1, 6, 1)
 
 		# downweight absent dx/dy but I didnt zero them out completely
 		self.absent_cont_scale = 0.20
@@ -147,10 +147,21 @@ class SynthTrainer(BaseTrainer):
 		total_per_slot = float32(p.shape[0] * p.shape[1])
 		neg = total_per_slot - pos
 
-		pos_weight = neg / maximum(pos, 1.0)
-		pos_weight = np_clip(pos_weight, 1.0, 8.0).astype(float32)
+		ratio = neg / maximum(pos, 1.0)
 
-		self.mask_pos_weight = from_numpy(pos_weight).to(self.device)
+		# default: no special weighting for LF/LR/RF/RR
+		w_pos = full((6,), 1.0, dtype=float32)
+		w_neg = full((6,), 1.0, dtype=float32)
+
+		# only F/R get extra imbalance handling
+		fr_ratio = ratio[4:6]
+
+		# mild version
+		w_pos[4:6] = np_clip(fr_ratio ** -0.50, 0.5, 1.0).astype(float32)
+		w_neg[4:6] = np_clip(fr_ratio ** 0.50, 1.0, 8.0).astype(float32)
+
+		self.mask_w_pos = from_numpy(w_pos).to(self.device)
+		self.mask_w_neg = from_numpy(w_neg).to(self.device)
 
 	def _split_x20_tensor(self, X: Tensor):
 		nbr = X[:, :, 2:20].reshape(X.size(0), X.size(1), 6, 3)
@@ -162,11 +173,11 @@ class SynthTrainer(BaseTrainer):
 	def _sample(self, X):
 		# [B,T,D]
 		t = randint(0, self.diffusion.T, (X.size(0),), device=self.device, dtype=long)
-		
+
 		eps = randn_like(X)
 		x_t = self.diffusion.q_sample(X, t, eps)
 		return x_t, t, eps
-	
+
 	def _predict(self, x_t, t, y):
 		if self.conditional:
 			return self.model(x_t, t, y)
@@ -195,17 +206,21 @@ class SynthTrainer(BaseTrainer):
 		# continuous epsilon losses
 		# [B,T,6,1]
 		present = p_true.unsqueeze(-1)
-		cont_weight = self.slot_cont_weights * (self.absent_cont_scale + (1.0 - self.absent_cont_scale) * present)
+		cont_weight = self.slot_weights * (self.absent_cont_scale + (1.0 - self.absent_cont_scale) * present)
 
 		loss_ego = ((eps_ego_hat - eps_ego_true) ** 2).mean()
 		loss_slots = (((eps_slots_hat - eps_slots_true) ** 2) * cont_weight).mean()
 
 		# mask loss on clean p
-		loss_mask = binary_cross_entropy_with_logits(p_logits, p_true, pos_weight=self.mask_pos_weight.view(1, 1, 6))
+		bce = binary_cross_entropy_with_logits(p_logits, p_true, reduction="none")
+		mask_w = p_true * self.mask_w_pos.view(1, 1, 6) + (1.0 - p_true) * self.mask_w_neg.view(1, 1, 6)
+		loss_mask = (bce * mask_w).mean()
+		# loss_mask = binary_cross_entropy_with_logits(p_logits, p_true, reduction="none", pos_weight=self.mask_pos_weight.view(1, 1, 6))
+		# # loss_mask = (bce * self.slot_mask_scale).mean()
 
 		# temporal consistency
 		temp_slots = ((eps_slots_hat[:, 1:] - eps_slots_hat[:, :-1]) - (eps_slots_true[:, 1:] - eps_slots_true[:, :-1])) ** 2
-		temp_slots = (temp_slots * self.slot_cont_weights).mean()
+		temp_slots = (temp_slots * self.slot_weights).mean()
 
 		p_prob = p_logits.sigmoid()
 		temp_mask = ((p_prob[:, 1:] - p_prob[:, :-1]) - (p_true[:, 1:] - p_true[:, :-1])) ** 2
@@ -216,12 +231,6 @@ class SynthTrainer(BaseTrainer):
 		total_loss += float(loss.item()) * batch_size
 		total += batch_size
 		return loss, total, total_loss
-
-	# def _calc_loss(self, eps_hat, eps, total_loss: float, total: int, batch_size):
-	# 	loss = self.loss_fn(eps_hat, eps)
-	# 	total_loss += float(loss.item()) * batch_size
-	# 	total += batch_size
-	# 	return loss, total, total_loss
 
 	def _save_best(self, epoch, val_loss):
 		if not self.cfg.trainers.diffSynth.checkpoint.enabled:

@@ -214,8 +214,70 @@ class BaseTrainer:
 			self.log.info(f"Built scheduler: OneCycleLR (max_lr={max_lr}, epochs={total_epochs}, steps_per_epoch={train_steps_per_epoch})")
 			return sch
 
-		# Fallback to standard torch schedulers
+		# Cosine Hold Cosine
+		if sched_name == "CosineHoldCosineLR":
+			if step_per != "epoch":
+				raise ValueError("CosineHoldCosineLR currently expects step_per='epoch'")
 
+			import math
+
+			first_cosine_epochs = int(params.get("first_cosine_epochs", 10))
+			hold_epochs = int(params.get("hold_epochs", 5))
+			first_eta_min = float(params.get("first_eta_min", 1e-4))
+			second_eta_min = float(params.get("second_eta_min", 1e-5))
+
+			second_cosine_epochs = total_epochs - first_cosine_epochs - hold_epochs
+			if first_cosine_epochs <= 0 or hold_epochs < 0 or second_cosine_epochs <= 0:
+				raise ValueError(
+					f"Invalid scheduler layout: epochs={total_epochs}, "
+					f"first_cosine_epochs={first_cosine_epochs}, hold_epochs={hold_epochs}, "
+					f"second_cosine_epochs={second_cosine_epochs}"
+				)
+
+			base_lrs = [pg["lr"] for pg in self.optimizer.param_groups]
+
+			def make_lambda(base_lr: float):
+				if first_eta_min > base_lr:
+					raise ValueError(
+						f"first_eta_min={first_eta_min} must be <= base lr={base_lr}"
+					)
+				if second_eta_min > first_eta_min:
+					raise ValueError(
+						f"second_eta_min={second_eta_min} must be <= first_eta_min={first_eta_min}"
+					)
+
+				r1 = first_eta_min / base_lr
+				r2 = second_eta_min / base_lr
+
+				def lr_lambda(epoch: int):
+					# phase 1: cosine from base_lr -> first_eta_min
+					if epoch < first_cosine_epochs:
+						progress = epoch / first_cosine_epochs
+						return r1 + (1.0 - r1) * 0.5 * (1.0 + math.cos(math.pi * progress))
+
+					# phase 2: hold at first_eta_min
+					if epoch < first_cosine_epochs + hold_epochs:
+						return r1
+
+					# phase 3: cosine from first_eta_min -> second_eta_min
+					t = epoch - first_cosine_epochs - hold_epochs
+					progress = t / second_cosine_epochs
+					return r2 + (r1 - r2) * 0.5 * (1.0 + math.cos(math.pi * progress))
+
+				return lr_lambda
+
+			lambdas = [make_lambda(base_lr) for base_lr in base_lrs]
+			sch = lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambdas)
+
+			self.log.info(
+				f"Built scheduler: CosineHoldCosineLR "
+				f"(cosine1={first_cosine_epochs}, hold={hold_epochs}, "
+				f"cosine2={second_cosine_epochs}, "
+				f"first_eta_min={first_eta_min}, second_eta_min={second_eta_min})"
+			)
+			return sch
+
+		# Fallback to standard torch schedulers
 		if sched_name == "CosineAnnealingLR":
 			if "T_max" not in params:
 				params["T_max"] = total_epochs if step_per == "epoch" else total_steps
